@@ -644,6 +644,9 @@ Proof
                              (ALOOKUP (REVERSE ys) s)’
         by (irule LIST_REL_OPTREL \\ gs [])
       \\ gs [OPTREL_def]
+      \\ last_x_assum kall_tac
+      \\ last_x_assum kall_tac
+      \\ qpat_x_assum ‘LIST_REL _ _ _’ assume_tac
       \\ gs [Once exp_rel_cases])
     \\ pairarg_tac \\ gvs []
     \\ Cases_on ‘w’ \\ gvs [dest_anyThunk_def]

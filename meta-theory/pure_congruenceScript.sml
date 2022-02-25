@@ -2577,9 +2577,10 @@ Proof
 QED
 
 Theorem Seq_id:
-  (Seq x x ≅? x) b
+  ∀b x. (Seq x x ≅? x) b
 Proof
-  irule eval_wh_IMP_exp_eq
+  rpt gen_tac
+  \\ irule eval_wh_IMP_exp_eq
   \\ fs [subst_def,eval_wh_Seq] \\ rw [] \\ fs []
 QED
 
