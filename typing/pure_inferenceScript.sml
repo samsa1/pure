@@ -536,7 +536,6 @@ End
 
 
 (* TODO this approach is naive *)
-
 Definition is_solveable_def:
   is_solveable (Unify d t1 t2) cs = T ∧
   is_solveable (Instantiate d t sch) cs = T ∧
@@ -568,6 +567,16 @@ Proof
   last_x_assum drule >> rw[] >> qexists_tac `h::left` >> simp[]
 QED
 
+Theorem get_solveable_NONE:
+  ∀l rest. get_solveable l rest = NONE ⇒
+    l = [] ∨ (∀c. MEM c l ⇒ ∃d t1 vs t2. c = Implicit d t1 vs t2)
+Proof
+  Induct >> rw[] >> rename1 `h::_` >>
+  Cases_on `h` >> gvs[get_solveable_def, is_solveable_def] >>
+  FULL_CASE_TAC >> gvs[] >>
+  last_x_assum drule >> rw[] >> gvs[]
+QED
+
 Definition constraint_weight_def:
   constraint_weight (Unify _ _ _) = 1n ∧
   constraint_weight (Instantiate _ _ _ ) = 2n ∧
@@ -581,12 +590,20 @@ Proof
   PairCases_on `p` >> rw[subst_constraint_def, constraint_weight_def]
 QED
 
+Definition monomorphise_implicit_def:
+  monomorphise_implicit new (Implicit d t1 vs t2) = (
+    let (n,s,scheme) = generalise 0 (union vs new) FEMPTY t2 in
+    Instantiate d t1 (n,scheme)) ∧
+  monomorphise_implicit new d = d (* should not be encountered *)
+End
+
 Definition solve_def:
   solve [] = return FEMPTY ∧
 
   solve cs = case get_solveable cs [] of
-    | NONE => fail
-
+    | NONE =>
+        let active = FOLDL (λacc c. union (activevars c) acc) LN cs in
+        solve (MAP (monomorphise_implicit active) cs)
     | SOME $ (Unify d t1 t2, cs) => do
         sub <- oreturn $ pure_unify FEMPTY t1 t2;
         cs' <<- MAP (subst_constraint sub) cs;
@@ -603,7 +620,17 @@ Definition solve_def:
         solve (Instantiate d t1 (n, scheme) :: cs) od
 Termination
   WF_REL_TAC `measure $ λl. SUM $ MAP constraint_weight l` >>
-  rw[constraint_weight_def, MAP_MAP_o, combinTheory.o_DEF, SF ETA_ss] >>
+  reverse $ rw[constraint_weight_def, MAP_MAP_o, combinTheory.o_DEF, SF ETA_ss]
+  >- (
+    rename1 `c::cs` >> drule get_solveable_NONE >> rw[] >> gvs[SF DNF_ss] >>
+    gvs[get_solveable_def] >> FULL_CASE_TAC >> gvs[] >>
+    irule $  DECIDE ``a ≤ c:num ∧ b < d ⇒ a + b < c + d`` >>
+    simp[monomorphise_implicit_def] >> pairarg_tac >> simp[constraint_weight_def] >>
+    rename1 `monomorphise_implicit active` >>
+    last_x_assum kall_tac >> ntac 2 $ pop_assum kall_tac >>
+    Induct_on `cs` >> rw[] >> gvs[SF DNF_ss] >>
+    simp[monomorphise_implicit_def] >> pairarg_tac >> simp[constraint_weight_def]
+    ) >>
   drule get_solveable_SOME >> strip_tac >> gvs[] >>
   Cases_on `left` >> gvs[SUM_APPEND, constraint_weight_def]
 End
