@@ -712,6 +712,115 @@ Proof
   metis_tac [needs_projs_reduce, needs_Var_is_demands]
 QED
 
+Theorem EXISTS_EL:
+  ∀l P. EXISTS P l ⇒ ∃n. n < LENGTH l ∧ P (EL n l)
+Proof
+  Induct
+  \\ fs [EXISTS_DEF]
+  \\ rw []
+  >- (qexists_tac ‘0’
+      \\ fs [])
+  \\ first_x_assum $ dxrule
+  \\ rw []
+  \\ rename1 ‘n < LENGTH l’
+  \\ qexists_tac ‘SUC n’
+  \\ fs []
+QED
+
+Theorem demands_AtomOp:
+  ∀d l op. EXISTS (λe. e demands d) l ⇒ Prim (AtomOp op) l demands d
+Proof
+  gen_tac
+  \\ PairCases_on ‘d’
+  \\ rw [eval_wh_def, eval_wh_to_def, demands_def]
+  \\ irule exp_eq_trans
+  \\ irule_at Any exp_eq_Prim_cong
+  \\ drule EXISTS_EL
+  \\ rw []
+  \\ rename1 ‘EL n l ≈ Seq p _’
+  \\ qexists_tac ‘LUPDATE (Seq p (EL n l)) n l’
+(*  \\ qexists_tac ‘GENLIST (λ i. if i = n then Seq p (EL i l) else EL i l) (LENGTH l)’ *)
+  \\ rw [LIST_REL_EL_EQN, EL_LUPDATE]
+  >- (IF_CASES_TAC
+      \\ fs [exp_eq_refl])
+  \\ irule no_err_eval_wh_IMP_exp_eq
+  \\ rw [no_err_eval_wh_def, subst_def, eval_wh_Prim_alt, MAP_MAP_o]
+  \\ qabbrev_tac ‘l2 = LUPDATE (Seq p (EL n l)) n l’
+  >- (qsuff_tac ‘EXISTS error_Atom (MAP (eval_wh o (λa. subst f a)) l2)’
+      >- rw [get_atoms_def]
+      \\ fs [EXISTS_MEM]
+      \\ qexists_tac ‘eval_wh (subst f (EL n l2))’
+      \\ unabbrev_all_tac
+      \\ rw [LUPDATE_MAP, MEM_LUPDATE, EL_LUPDATE]
+      \\ fs [subst_def, eval_wh_Seq])
+  >- (Cases_on ‘EXISTS error_Atom (MAP (eval_wh o (λa. subst f a)) l2)’
+      >- rw [get_atoms_def]
+      \\ qsuff_tac ‘MEM wh_Diverge (MAP (eval_wh ∘ (λa. subst f a)) l2)’
+      >- rw [get_atoms_def]
+      \\ unabbrev_all_tac
+      \\ rw [LUPDATE_MAP, MEM_LUPDATE, subst_def, eval_wh_Seq])
+  \\ unabbrev_all_tac
+  \\ rw [MAP_GENLIST, Once get_atoms_def]
+  >- (fs [EXISTS_MAP]
+      \\ drule EXISTS_EL
+      \\ rw [EL_LUPDATE]
+      \\ rename1 ‘n2 = n’
+      \\ Cases_on ‘n2 = n’
+      \\ rw []
+      \\ fs [subst_def, eval_wh_Seq]
+      >- (gvs []
+          \\ ‘EXISTS (λx. error_Atom (eval_wh (subst f x))) l’
+            by (fs [EXISTS_MEM]
+                \\ first_x_assum $ irule_at Any
+                \\ fs [EL_MEM])
+          \\ rw [get_atoms_def, EXISTS_MAP])
+      \\ ‘EXISTS (λx. error_Atom (eval_wh (subst f x))) l’
+        by (fs [EXISTS_MEM]
+            \\ first_x_assum $ irule_at Any
+            \\ fs [EL_MEM])
+      \\ rw [get_atoms_def, EXISTS_MAP])
+  \\ fs []
+  \\ ‘¬ EXISTS error_Atom (MAP (eval_wh o (λa. subst f a)) l)’
+    by (rw []
+        \\ fs [EVERY_MEM]
+        \\ rw []
+        \\ fs [MEM_EL]
+        \\ rename1 ‘¬error_Atom (EL n2 _)’
+        \\ Cases_on ‘n2 = n’
+        \\ rw []
+        >- (first_x_assum $ qspecl_then [‘eval_wh (subst f (Seq p (EL n l)))’] assume_tac
+            \\ fs [eval_wh_Seq, subst_def]
+            \\ ‘(if eval_wh (subst f p) = wh_Error then wh_Error
+                 else if eval_wh (subst f p) = wh_Diverge then wh_Diverge
+                 else eval_wh (subst f (EL n l))) = eval_wh (subst f (EL n l))’ by fs []
+            \\ fs [EL_MAP]
+            \\ pop_assum kall_tac
+            \\ pop_assum irule
+            \\ first_assum $ irule_at Any
+            \\ rw [EL_MAP, EL_LUPDATE, subst_def, eval_wh_Seq])
+        \\ first_x_assum irule
+        \\ first_assum $ irule_at Any
+        \\ fs [EL_MAP, EL_LUPDATE])
+  >- (‘MEM wh_Diverge (MAP (eval_wh o (λa. subst f a)) l)’
+        by (fs [MEM_EL]
+            \\ first_assum $ irule_at Any
+            \\ pop_assum kall_tac
+            \\ rename1 ‘EL n2 _’
+            \\ Cases_on ‘n2 = n’
+            >- (fs [EL_MAP, EL_LUPDATE, LUPDATE_MAP, eval_wh_Seq, subst_def]
+                \\ metis_tac [])
+            \\ gvs [LENGTH_LUPDATE, EL_MAP, EL_LUPDATE, eval_wh_Seq, subst_def])
+      \\ rw [get_atoms_def])
+  >- (qsuff_tac ‘MAP (eval_wh o (λa. subst f a)) (LUPDATE (Seq p (EL n l)) n l) = MAP (eval_wh o (λa. subst f a)) l’
+      >- (rw [get_atoms_def]
+          \\ fs [])
+      \\ pop_assum kall_tac
+      \\ pop_assum kall_tac
+      \\ pop_assum kall_tac
+      \\ irule LIST_EQ
+      \\ rw [LENGTH_MAP, LENGTH_LUPDATE, EL_MAP, EL_LUPDATE, eval_wh_Seq, subst_def])
+QED
+
 (*
 Definition fun_demands2_def:
   f fun_demands (ps,(k:num),(n:num)) ⇒ ∀l hd v. LENGTH l = n ∧ LENGTH hd = k ∧ (l = hd++v::tl) ⇒ Apps f (MAP Var l) demands ([],v)
@@ -782,6 +891,36 @@ Proof
     THEN1 (irule exp_eq_App_cong \\ fs [exp_eq_refl])
 *)
 
+Theorem exp_eq_Apps_cong:
+  ∀l l' b e e'. LIST_REL (λx y. (x ≅? y) b) l l' ⇒ (e ≅? e') b ⇒ (Apps e l ≅? Apps e' l') b
+Proof
+  Induct
+  \\ fs [Apps_def]
+  \\ rw [Apps_def]
+  \\ fs [Apps_def]
+  \\ first_x_assum $ irule
+  \\ fs [exp_eq_App_cong]
+QED
+
+Theorem exp_eq_Lams_cong:
+  ∀l e e' b. (e ≅? e') b ⇒ (Lams l e ≅? Lams l e') b
+Proof
+  Induct
+  \\ rw [Lams_def]
+  \\ fs [exp_eq_Lam_cong]
+QED
+
+Theorem Apps_demands:
+  ∀el d e. e demands d ⇒ Apps e el demands d
+Proof
+  Induct
+  \\ fs [Apps_def]
+  \\ gen_tac
+  \\ rw []
+  \\ first_x_assum irule
+  \\ fs [demands_App]
+QED
+
 Datatype:
   ctxt = Nil
        | IsFree string ctxt
@@ -841,6 +980,10 @@ Inductive find: (* i i o o *)
      find f c ds f' ∧
      find e c ds2 e' ⇒
      find (App f e) c ds (App f' e')) ∧
+[find_Apps:]
+  (∀f f' el el' c ds.
+     LIST_REL (λe e'. ∃ds. find e c ds e') el el' ∧
+     find f c ds f' ⇒ find (Apps f el) c ds (Apps f' el')) ∧
 [find_Prim:]
   (∀c el el' ope.
      LENGTH el = LENGTH el' ∧ (∀k. k < LENGTH el ⇒ ∃ds. find (EL k el) c ds (EL k el') )
@@ -859,6 +1002,11 @@ Inductive find: (* i i o o *)
 [find_IsEq:]
   (∀e e' n i c ds.
      find e c ds e' ⇒ find (IsEq n i e) c ds (IsEq n i e')) ∧
+[find_Atom:]
+  (∀el dsl el' c op.
+     LENGTH dsl = LENGTH el' ∧
+     LIST_REL (λe (ds, e'). find e c ds e') el (ZIP (dsl, el')) ⇒
+     find (Prim (AtomOp op) el) c (BIGUNION (set dsl)) (Prim (AtomOp op) el')) ∧
 [find_Subset:]
   (∀e e' c ds ds'.
      find e c ds e' ∧ (∀ps v. (ps, v) ∈ ds' ⇒ ∃ps'. (ps++ps', v) ∈ ds) ⇒ find e c ds' e') ∧
@@ -875,7 +1023,14 @@ Inductive find: (* i i o o *)
      ⇒ find (Let v e e2) c ds'' (Let v e' e2')) ∧
 [find_Lam:]
   (∀e e' c ds v.
-     find e c ds e' ⇒ find (Lam v e) c {} (Lam v e'))
+     find e c ds e' ⇒ find (Lam v e) c {} (Lam v e')) ∧
+[find_Lams:]
+  (∀e e' c ds vl.
+     find e (FOLDL (λc n. IsFree n c) c vl) ds e' ⇒ find (Lams vl e) c {} (Lams vl e')) ∧
+[find_Eq:]
+  (∀e e' c. e ≈ e' ⇒ find e c {} e') ∧
+[find_Letrec:]
+  (∀e e' ds c b b'. LIST_REL (λ(n1, e1) (n2, e2). n1 = n2 ∧ e1 ≈ e2) b b' ∧ find e (RecBind b c) ds e' ⇒ find (Letrec b e) c {} (Letrec b e'))
 End
 
 
@@ -914,12 +1069,37 @@ Proof
   >~[‘App f e ≈ App f' e'’] (* find_App *)
   >- (rw []
       \\ fs [exp_eq_App_cong, demands_App])
+  >~[‘Apps e el' ≈ Apps e' el''’]
+  >- (rw []
+      \\ fs [Apps_demands]
+      \\ irule exp_eq_Apps_cong
+      \\ fs [LIST_REL_EL_EQN]
+      \\ rw []
+      \\ first_x_assum $ qspecl_then [‘n’] assume_tac
+      \\ metis_tac [])
   >~[‘Proj n i e ≈ Proj n i e'’] (* find_Proj *)
   >- (strip_tac
       \\ fs [exp_eq_Prim_cong, demands_Proj])
   >~[‘IsEq n i e ≈ IsEq n i e'’] (* find_IsEq *)
   >- (rw []
       \\ fs [exp_eq_Prim_cong, demands_IsEq])
+  >~[‘Prim (AtomOp op) el1 ≈ Prim (AtomOp op) el2’]
+  >- (rw []
+      >- (irule exp_eq_Prim_cong
+          \\ fs [LIST_REL_EL_EQN]
+          \\ rw []
+          \\ rename1 ‘n < LENGTH _’
+          \\ first_x_assum $ qspecl_then [‘n’] assume_tac
+          \\ gvs [EL_ZIP])
+      \\ fs [LIST_REL_EL_EQN, MEM_EL]
+      \\ rename1 ‘ds = EL n dsl’
+      \\ first_x_assum $ qspecl_then [‘n’] assume_tac
+      \\ irule demands_AtomOp
+      \\ gvs [EL_ZIP, EXISTS_MEM]
+      \\ pop_assum $ irule_at Any
+      \\ fs [MEM_EL]
+      \\ first_x_assum $ irule_at Any
+      \\ fs [])
   >>~[‘Prim ope el1 ≈ Prim ope el2’] (* find_Prim *)
   >- (rw []
       \\ irule exp_eq_Prim_cong
@@ -977,6 +1157,12 @@ Proof
       \\ fs [])
   >- (rw [] (* find_Lam *)
       \\ fs [exp_eq_Lam_cong])
+  >- (rw []
+      \\ fs [exp_eq_Lams_cong])
+  >- (rw []
+      \\ fs [])
+  >- (rw []
+      \\ fs [exp_eq_Letrec_cong, exp_eq_l_refl])
 QED
 
 Theorem find_soundness:
