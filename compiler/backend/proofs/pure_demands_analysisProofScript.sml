@@ -52,7 +52,7 @@ Definition demands_analysis_fun_def:
   (demands_analysis_fun c (Prim a0 (AtomOp op) el) =
      let outL = MAP (demands_analysis_fun c) el in
        let mL = MAP FST outL in
-         let m = FOLDL (λm ds. union m ds) (empty compare) mL in
+         let m = FOLDL union (empty compare) mL in
            (m, Prim a0 (AtomOp op) (MAP SND outL))) ∧
   (demands_analysis_fun c (Prim a0 ope el) =
      let el = MAP SND (MAP (demands_analysis_fun c) el) in
@@ -81,9 +81,9 @@ Definition ctxt_trans_def:
 End
 
 Theorem adds_demands_soundness:
-  ∀vl e e' m ds c ds a. find (exp_of e) c ds (exp_of e')
-                      ⇒ (∀v. (lookup m (implode v)) = SOME () ⇔ ∃ps. (ps, v) ∈ ds)
-                      ⇒ find (exp_of e) c ds (exp_of (adds_demands a m e' vl))
+  ∀vl e e' m ds c ds a. map_ok m ∧ find (exp_of e) c (IMAGE (λx. ([],explode x)) (FDOM (to_fmap m))) (exp_of e')
+                      ⇒ find (exp_of e) c (IMAGE (λx. ([],explode x)) (FDOM (to_fmap m)))
+                             (exp_of (adds_demands a m e' vl))
 Proof
   Induct
   \\ rw [adds_demands_def]
@@ -92,10 +92,11 @@ Proof
   \\ fs []
   \\ rw [exp_of_def, op_of_def]
   \\ irule find_Seq
-  \\ first_assum $ qspecl_then [‘h’] assume_tac
-  \\ fs []
   \\ first_x_assum $ irule_at Any
-  \\ first_x_assum irule
+  \\ qexists_tac ‘[]’
+  \\ gvs [lookup_thm, FLOOKUP_DEF]
+  \\ pop_assum $ irule_at Any
+  \\ fs [explode_implode]
 QED
 
 (*
@@ -110,7 +111,7 @@ QED
 
 Theorem FOLDL_union_map_ok:
   ∀l cmp m. TotOrd cmp ∧ EVERY (λm. map_ok m ∧ cmp_of m = cmp) l ∧ map_ok m ∧ cmp_of m = cmp ⇒
-          map_ok (FOLDL (λm1 m2. union m1 m2) m l)
+          map_ok (FOLDL union m l)
 Proof
   Induct
   \\ fs [empty_thm]
@@ -119,7 +120,7 @@ QED
 
 Theorem FOLDL_union_cmp_of:
   ∀l cmp m. TotOrd cmp ∧ EVERY (λm. cmp_of m = cmp ∧ map_ok m) l ∧ map_ok m ∧ cmp_of m = cmp ⇒
-          cmp_of (FOLDL (λm1 m2. union m1 m2) m l) = cmp
+          cmp_of (FOLDL union m l) = cmp
 Proof
   Induct
   \\ fs [empty_thm]
@@ -128,7 +129,7 @@ QED
 
 Theorem FOLDL_union_lookup:
   ∀l cmp m v. TotOrd cmp ∧ EVERY (λm. cmp_of m = cmp ∧ map_ok m) l ∧ map_ok m ∧ cmp_of m = cmp ⇒
-            (lookup (FOLDL (λm1 m2. union m1 m2) m l) v = SOME () ⇔ lookup m v = SOME () ∨ ∃m2. MEM m2 l ∧ lookup m2 v = SOME ())
+            (lookup (FOLDL union m l) v = SOME () ⇔ lookup m v = SOME () ∨ ∃m2. MEM m2 l ∧ lookup m2 v = SOME ())
 Proof
   Induct
   \\ fs [empty_thm]
@@ -146,11 +147,26 @@ Proof
   >- metis_tac []
 QED
 
+Theorem set_FOLDL_union:
+  ∀l m cmp f.  map_ok m ∧ cmp_of m = cmp ∧ TotOrd cmp ∧
+                     EVERY (λm. cmp_of m = cmp ∧ map_ok m) l ⇒
+                       IMAGE f ((FDOM o to_fmap) (FOLDL union m l))
+                       = IMAGE f ((FDOM o to_fmap) m)
+                               ∪ BIGUNION (set (MAP ((IMAGE f) o FDOM o to_fmap) l))
+Proof
+  Induct
+  \\ fs []
+  \\ rw []
+  \\ rename1 ‘union m hd’
+  \\ first_x_assum $ qspecl_then [‘union m hd’, ‘f’] assume_tac
+  \\ gvs [union_thm]
+  \\ fs [UNION_ASSOC]
+QED
+
 Theorem demands_analysis_soudness_lemma:
   ∀(f: num -> α) (e: α cexp) c m e'.
     demands_analysis_fun c e = (m, e') ⇒
-       ∃ds. (∀v. (lookup m (implode v)) = SOME () ⇔ ∃ps. (ps, v) ∈ ds) ∧
-            find (exp_of e) (ctxt_trans c) ds (exp_of e') ∧
+       find (exp_of e) (ctxt_trans c) (IMAGE (λx. ([],explode x)) (FDOM (to_fmap m))) (exp_of e') ∧
             map_ok m ∧ cmp_of m = compare
 Proof
   gen_tac
@@ -158,42 +174,25 @@ Proof
   \\ gen_tac
   \\ Cases
   \\ rename1 ‘Size = cexp_size _ _’
-  \\ rw [demands_analysis_fun_def, exp_of_def] >~[‘Var n’]
-  >- (qexists_tac ‘{([], n)}’
-      \\ fs [find_Var]
-      \\ fs [empty_thm, TotOrd_compare, insert_thm, lookup_insert, lookup_thm]
-      \\ rw []
-      \\ eq_tac
-      \\ rw []
-      \\ assume_tac implode_BIJ
-      \\ fs [BIJ_DEF, INJ_DEF])
+  \\ strip_tac
+  \\ simp [demands_analysis_fun_def, exp_of_def]
+  >~[‘Var a n’]
+  >- fs [empty_thm, TotOrd_compare, insert_thm, lookup_insert, lookup_thm, find_Var]
   >~[‘Prim a op l’]
   >- (Cases_on ‘op’
-      \\ rw [op_of_def] >~[‘Prim a Seq l’]
+      >~[‘Prim a Seq l’]
       >- (Cases_on ‘l’ >~[‘Prim a Seq []’]
-          >- (fs [demands_analysis_fun_def]
-              \\ qexists_tac ‘{}’
-              \\ fs [empty_thm, lookup_thm, TotOrd_compare]
-              \\ rw [exp_of_def, op_of_def]
-              \\ fs [find_Bottom])
+          >- fs [demands_analysis_fun_def, op_of_def, empty_thm,
+                 lookup_thm, TotOrd_compare, exp_of_def, find_Bottom]
           \\ rename1 ‘e1::t’
           \\ Cases_on ‘t’ >~[‘Prim a Seq [e]’]
-          >- (fs [demands_analysis_fun_def]
-              \\ qexists_tac ‘{}’
-              \\ fs [empty_thm, lookup_thm, TotOrd_compare]
-              \\ rw [exp_of_def, op_of_def]
-              \\ irule find_Eq
-              \\ irule eval_wh_IMP_exp_eq
-              \\ rw [eval_wh_def, eval_wh_to_def, subst_def])
+          >- fs [demands_analysis_fun_def, empty_thm, lookup_thm, TotOrd_compare, exp_of_def,
+                 op_of_def, find_Eq, eval_wh_IMP_exp_eq, eval_wh_def, eval_wh_to_def, subst_def]
           \\ rename1 ‘e1::e2::t’
           \\ Cases_on ‘t’ >~ [‘Prim a Seq (e1::e2::e3::t)’]
-          >- (fs [demands_analysis_fun_def]
-              \\ qexists_tac ‘{}’
-              \\ fs [empty_thm, lookup_thm, TotOrd_compare]
-              \\ rw [exp_of_def, op_of_def]
-              \\ irule find_Eq
-              \\ irule eval_wh_IMP_exp_eq
-              \\ rw [eval_wh_def, eval_wh_to_def, subst_def])
+          >- fs [demands_analysis_fun_def, empty_thm, lookup_thm, TotOrd_compare, exp_of_def, op_of_def,
+                  find_Eq, eval_wh_IMP_exp_eq, eval_wh_def, eval_wh_to_def, subst_def]
+          \\ rw []
           \\ first_assum   $ qspecl_then [‘cexp_size f e1’] assume_tac
           \\ first_x_assum $ qspecl_then [‘cexp_size f e2’] assume_tac
           \\ fs [cexp_size_def, cexp_size_lemma]
@@ -209,49 +208,23 @@ Proof
           \\ PairCases_on ‘p2’
           \\ fs []
           \\ rw [exp_of_def, op_of_def]
+          \\ fs [union_thm]
           \\ irule_at Any find_Seq2
-          \\ first_x_assum $ irule_at Any
-          \\ first_x_assum $ irule_at Any
-          \\ fs [lookup_thm, union_thm, FLOOKUP_FUNION]
-          \\ gen_tac
-          \\ eq_tac
-          \\ rw []
-          >- (Cases_on ‘FLOOKUP (to_fmap p10) (implode v)’
-              \\ fs []
-              >- (‘∃ps. (ps, v) ∈ ds'’ by metis_tac []
-                  \\ qexists_tac ‘ps’
-                  \\ fs [])
-              \\ ‘∃ps. (ps, v) ∈ ds’ by metis_tac []
-              \\ qexists_tac ‘ps’
-              \\ fs [])
-          >- (‘FLOOKUP (to_fmap p10) (implode v) = SOME ()’ by metis_tac []
-             \\ fs [])
-          \\ ‘FLOOKUP (to_fmap p20) (implode v) = SOME ()’ by metis_tac []
-          \\ fs []
-          \\ Cases_on ‘FLOOKUP (to_fmap p10) (implode v)’
           \\ fs [])
       >~ [‘AtomOp op’]
-      >- (fs [demands_analysis_fun_def]
-          \\ rw [exp_of_def, op_of_def]
-          \\ irule_at Any find_Atom
-          \\ rename1 ‘demands_analysis_fun c’
-          \\ qexists_tac ‘MAP (λm. IMAGE (λx. ([], explode x)) (FDOM (to_fmap m))) (MAP (FST o demands_analysis_fun c) l)’
-          \\ irule_at Any FOLDL_union_cmp_of
-          \\ irule_at Any FOLDL_union_map_ok
-          \\ qexists_tac ‘compare’
-          \\ gvs [LIST_REL_EL_EQN, TotOrd_compare, empty_thm, ZIP_MAP, MAP_MAP_o, EL_MAP, MEM_MAP]
-          \\ rw [EVERY_MEM, MEM_EL]
-          >~[‘lookup _ (implode v) = SOME ()’]
-          >- (qspecl_then [‘MAP (FST ∘ (λa. demands_analysis_fun c a)) l’, ‘compare’, ‘empty compare’, ‘implode v’] assume_tac FOLDL_union_lookup
-              \\ ‘EVERY (λm. cmp_of m = compare ∧ map_ok m)
-                  (MAP (FST ∘ (λa. demands_analysis_fun c a)) l)’ by
-                (fs [EVERY_EL]
-                 \\ pop_assum kall_tac
-                 \\ rw []
-                 \\ rename1 ‘n < LENGTH l’
+      >- (rw [exp_of_def, op_of_def, demands_analysis_fun_def]
+          >- (rw [exp_of_def, op_of_def, MAP_MAP_o]
+              \\ rename1 ‘demands_analysis_fun c’
+              \\ qspecl_then [‘MAP (FST o (λa. demands_analysis_fun c a)) l’, ‘empty compare’, ‘compare’, ‘λx. ([]: (string # num) list, explode x)’] assume_tac set_FOLDL_union
+              \\ gvs [empty_thm, TotOrd_compare]
+              \\ ‘EVERY (λm. cmp_of m = compare ∧ map_ok m) (MAP (FST o (λa. demands_analysis_fun c a)) l)’ by
+                (pop_assum kall_tac
+                 \\ fs [EVERY_EL]
+                 \\ rw [EL_MAP]
+                 \\ rename1 ‘EL n l’
                  \\ first_x_assum $ qspecl_then [‘cexp_size f (EL n l)’] assume_tac
                  \\ ‘cexp_size f (EL n l) < cexp6_size f l’
-                    by metis_tac [MEM_EL, cexp_size_lemma]
+                   by metis_tac [cexp_size_lemma, EL_MEM]
                  \\ fs [cexp_size_def]
                  \\ pop_assum kall_tac
                  \\ pop_assum $ qspecl_then [‘f’, ‘EL n l’] assume_tac
@@ -259,35 +232,16 @@ Proof
                  \\ pop_assum $ qspecl_then [‘c’] assume_tac
                  \\ qabbrev_tac ‘p = demands_analysis_fun c (EL n l)’
                  \\ PairCases_on ‘p’
-                 \\ fs [EL_MAP])
-              \\ fs [TotOrd_compare, empty_thm]
-              \\ rw [lookup_thm, empty_thm, TotOrd_compare]
-              \\ eq_tac \\ rw []
-              >- (fs [MEM_EL]
-                  \\ rename1 ‘EL n _’
-                  \\ first_x_assum $ qspecl_then [‘cexp_size f (EL n l)’] assume_tac
-                  \\ ‘cexp_size f (EL n l) < cexp6_size f l’
-                     by metis_tac [MEM_EL, cexp_size_lemma]
-                  \\ fs [cexp_size_def]
-                  \\ pop_assum kall_tac
-                  \\ pop_assum $ qspecl_then [‘f’, ‘EL n l’] assume_tac
-                  \\ fs []
-                  \\ pop_assum $ qspecl_then [‘c’] assume_tac
-                  \\ qabbrev_tac ‘p = demands_analysis_fun c (EL n l)’
-                  \\ PairCases_on ‘p’
-                  \\ fs []
-                  \\ rename1 ‘lookup m (implode v) = SOME ()’
-                  \\ first_x_assum $ qspecl_then [‘v’] assume_tac
-                  \\ gvs [EL_MAP]
-                  \\ first_x_assum $ irule_at Any
-                  \\ first_assum $ irule_at Any
-                  \\ qexists_tac ‘EL n l’
-                  \\ fs []
-                  \\ cheat)
+                 \\ fs [])
+              \\ fs []
+              \\ rw []
+              \\ irule find_Atom
+              \\ gvs [LENGTH_MAP, LIST_REL_EL_EQN]
+              \\ rw [EL_ZIP, EL_MAP]
               \\ rename1 ‘EL n l’
               \\ first_x_assum $ qspecl_then [‘cexp_size f (EL n l)’] assume_tac
               \\ ‘cexp_size f (EL n l) < cexp6_size f l’
-                by metis_tac [MEM_EL, cexp_size_lemma]
+                 by metis_tac [cexp_size_lemma, EL_MEM]
               \\ fs [cexp_size_def]
               \\ pop_assum kall_tac
               \\ pop_assum $ qspecl_then [‘f’, ‘EL n l’] assume_tac
@@ -295,36 +249,38 @@ Proof
               \\ pop_assum $ qspecl_then [‘c’] assume_tac
               \\ qabbrev_tac ‘p = demands_analysis_fun c (EL n l)’
               \\ PairCases_on ‘p’
+              \\ fs [])
+          >- (irule_at Any FOLDL_union_map_ok
+              \\ fs [empty_thm, TotOrd_compare, EVERY_EL]
+              \\ rw [MAP_MAP_o, EL_MAP]
+              \\ rename1 ‘demands_analysis_fun c (EL n l)’
+              \\ first_x_assum $ qspecl_then [‘cexp_size f (EL n l)’] assume_tac
+              \\ ‘cexp_size f (EL n l) < cexp6_size f l’
+                 by metis_tac [cexp_size_lemma, EL_MEM]
+              \\ fs [cexp_size_def]
+              \\ pop_assum kall_tac
+              \\ pop_assum $ qspecl_then [‘f’, ‘EL n l’] assume_tac
               \\ fs []
-              \\ rename1 ‘lookup m _’
-              \\ qexists_tac ‘m’
-              \\ gvs [MEM_EL, EL_MAP, lookup_thm, FLOOKUP_DEF, to_fmap_thm]
-              \\ first_assum $ irule_at Any
-              \\ gvs [EL_MAP])
-          \\ rename1 ‘n < LENGTH l’
-          \\ first_x_assum $ qspecl_then [‘cexp_size f (EL n l)’] assume_tac
-          \\ ‘cexp_size f (EL n l) < cexp6_size f l’
-               by (assume_tac cexp_size_lemma
-                   \\ rw []
-                   \\ first_x_assum irule
-                   \\ fs [EL_MEM])
-          \\ fs [cexp_size_def]
-          \\ pop_assum kall_tac
-          \\ pop_assum $ qspecl_then [‘f’, ‘EL n l’] assume_tac
-          \\ fs []
-          \\ pop_assum $ qspecl_then [‘c’] assume_tac
-          \\ qabbrev_tac ‘p = demands_analysis_fun c (EL n l)’
-          \\ PairCases_on ‘p’
-          \\ fs [EL_MAP]
-          \\ irule find_Subset
-          \\ first_x_assum $ irule_at Any
-          \\ rw []
-          \\ fs [lookup_thm]
-          \\ rename1 ‘v ∈ FDOM _’
-          \\ first_x_assum $ qspecl_then [‘explode v’] assume_tac
-          \\ fs [FLOOKUP_DEF]
-          \\ first_x_assum $ irule_at Any)
-      \\ qexists_tac ‘{}’ (* Cons s *)
+              \\ pop_assum $ qspecl_then [‘c’] assume_tac
+              \\ qabbrev_tac ‘p = demands_analysis_fun c (EL n l)’
+              \\ PairCases_on ‘p’
+              \\ fs [])
+          >- (irule_at Any FOLDL_union_cmp_of
+              \\ fs [empty_thm, TotOrd_compare, EVERY_EL]
+              \\ rw [MAP_MAP_o, EL_MAP]
+              \\ rename1 ‘demands_analysis_fun c (EL n l)’
+              \\ first_x_assum $ qspecl_then [‘cexp_size f (EL n l)’] assume_tac
+              \\ ‘cexp_size f (EL n l) < cexp6_size f l’
+                 by metis_tac [cexp_size_lemma, EL_MEM]
+              \\ fs [cexp_size_def]
+              \\ pop_assum kall_tac
+              \\ pop_assum $ qspecl_then [‘f’, ‘EL n l’] assume_tac
+              \\ fs []
+              \\ pop_assum $ qspecl_then [‘c’] assume_tac
+              \\ qabbrev_tac ‘p = demands_analysis_fun c (EL n l)’
+              \\ PairCases_on ‘p’
+              \\ fs []))
+      \\ rw [] (* Cons s *)
       \\ fs [empty_thm, TotOrd_compare, demands_analysis_fun_def, lookup_thm]
       \\ rw [exp_of_def, op_of_def]
       \\ irule_at Any find_Prim
@@ -345,20 +301,20 @@ Proof
       \\ fs []
       \\ first_x_assum $ irule_at Any)
   >~[‘App a fe argl’]
-  >- (rename1 ‘ctxt_trans c’
+  >- (rw []
+      \\ rename1 ‘demands_analysis_fun c’
       \\ qabbrev_tac ‘p = demands_analysis_fun c fe’
       \\ PairCases_on ‘p’
-      \\ fs []
+      \\ fs [demands_analysis_fun_def]
       \\ rw [exp_of_def]
-      \\ irule_at Any find_Apps
       \\ first_assum $ qspecl_then [‘cexp_size f fe’] assume_tac
       \\ fs [cexp_size_def]
       \\ pop_assum $ qspecl_then [‘f’, ‘fe’] assume_tac
       \\ fs []
       \\ pop_assum drule
       \\ rw []
+      \\ irule find_Apps
       \\ fs []
-      \\ first_x_assum $ irule_at Any
       \\ fs [LIST_REL_EL_EQN]
       \\ rw []
       \\ rename1 ‘EL n _’
@@ -374,24 +330,24 @@ Proof
       \\ fs [EL_MAP]
       \\ first_x_assum $ irule_at Any)
   >~ [‘Lam a namel e’]
-  >- (first_assum $ qspecl_then [‘cexp_size f e’] assume_tac
+  >- (rw []
+      \\ first_assum $ qspecl_then [‘cexp_size f e’] assume_tac
       \\ fs [cexp_size_def]
       \\ pop_assum $ qspecl_then [‘f’, ‘e’] assume_tac
       \\ fs []
-      \\ rename1 ‘ctxt_trans c’
+      \\ rename1 ‘demands_analysis_fun (IsFree namel c)’
       \\ pop_assum $ qspecl_then [‘IsFree namel c’] assume_tac
       \\ qabbrev_tac ‘p = demands_analysis_fun (IsFree namel c) e’
       \\ PairCases_on ‘p’
-      \\ fs []
-      \\ qexists_tac ‘{}’
-      \\ fs []
-      \\ fs [lookup_thm, TotOrd_compare, empty_thm]
+      \\ fs [empty_thm, TotOrd_compare]
       \\ rw [exp_of_def]
       \\ irule find_Lams
-      \\ qexists_tac ‘ds’
+      \\ rename1 ‘to_fmap p0’
+      \\ qexists_tac ‘IMAGE (λx. ([], explode x)) (FDOM (to_fmap p0))’
       \\ fs [ctxt_trans_def, adds_demands_soundness, lookup_thm])
   >~ [‘Let a vname e2 e1’]
-  >- (rename1 ‘demands_analysis_fun (Bind _ _ _ c) _’
+  >- (rw []
+      \\ rename1 ‘demands_analysis_fun (Bind _ _ _ c) _’
       \\ first_assum $ qspecl_then [‘cexp_size f e1’] assume_tac
       \\ first_x_assum $ qspecl_then [‘cexp_size f e2’] assume_tac
       \\ fs [cexp_size_def]
@@ -401,37 +357,37 @@ Proof
       \\ qabbrev_tac ‘p2 = demands_analysis_fun c e2’
       \\ PairCases_on ‘p1’
       \\ PairCases_on ‘p2’
-      \\ fs []
-      \\ first_x_assum drule
-      \\ first_x_assum drule
-      \\ rw []
-      \\ qexists_tac ‘{}’
-      \\ fs [empty_thm, TotOrd_compare, lookup_thm]
+      \\ fs [empty_thm, TotOrd_compare]
       \\ irule find_Subset
       \\ rw [exp_of_def]
       \\ Cases_on ‘FLOOKUP (to_fmap p10) (implode vname)’
       \\ fs []
       >- (irule_at Any find_Let
           \\ fs []
+          \\ first_x_assum $ dxrule
+          \\ first_x_assum $ dxrule
+          \\ rw []
           \\ first_x_assum $ irule_at Any
           \\ fs [ctxt_trans_def]
           \\ first_x_assum $ irule_at Any
           \\ gen_tac
           \\ strip_tac
-          \\ ‘FLOOKUP (to_fmap p10) (implode vname) = SOME ()’
-            by (fs [] \\ first_x_assum $ irule_at Any)
-          \\ fs [])
+          \\ gvs [IMAGE_DEF, FLOOKUP_DEF])
       \\ irule_at Any find_Let2
+      \\ first_x_assum $ dxrule
+      \\ first_x_assum $ dxrule
+      \\ rw []
       \\ first_assum $ irule_at Any
       \\ fs [ctxt_trans_def]
       \\ first_assum $ irule_at Any
-      \\ ‘∃ps. (ps, vname) ∈ ds'’ by metis_tac []
-      \\ first_assum $ irule_at Any
+      \\ qexists_tac ‘[]’
       \\ qexists_tac ‘{}’
-      \\ fs [])
+      \\ fs [IMAGE_DEF, FLOOKUP_DEF]
+      \\ first_x_assum $ irule_at Any
+      \\ fs [explode_implode])
   >~ [‘Letrec a binds exp’]
-  >- (rename1 ‘demands_analysis_fun (RecBind binds c c) _’
-      \\ qexists_tac ‘{}’
+  >- (rw []
+      \\ rename1 ‘demands_analysis_fun (RecBind binds c c) _’
       \\ qabbrev_tac ‘e = demands_analysis_fun (RecBind binds c c) exp’
       \\ PairCases_on ‘e’
       \\ fs [empty_thm, lookup_thm, TotOrd_compare]
@@ -457,32 +413,21 @@ Proof
       \\ rw [ctxt_trans_def]
       \\ first_x_assum $ irule_at Any)
   >~ [‘Case a case_exp s l’]
-  >- (rename1 ‘ctxt_trans c’
+  >- (gen_tac
+      \\ rename1 ‘ctxt_trans c’
       \\ first_x_assum $ qspecl_then [‘cexp_size f case_exp’] assume_tac
-      \\ fs [cexp_size_def]
+      \\ gvs [cexp_size_def]
       \\ pop_assum $ qspecl_then [‘f’, ‘case_exp’] assume_tac
       \\ fs []
       \\ pop_assum $ qspecl_then [‘c’] assume_tac
       \\ qabbrev_tac ‘cexp = demands_analysis_fun c case_exp’
       \\ PairCases_on ‘cexp’
-      \\ fs [empty_thm, lookup_thm, TotOrd_compare]
-      \\ irule_at Any find_Bottom
-      \\ fs [])
-  >~[‘Case a case_exp s l’]
-  >- (rename1 ‘demands_analysis_fun c case_exp’
-      \\ first_x_assum $ qspecl_then [‘cexp_size f case_exp’] assume_tac
-      \\ fs [cexp_size_def]
-      \\ pop_assum $ qspecl_then [‘f’, ‘case_exp’] assume_tac
-      \\ fs []
-      \\ pop_assum $ qspecl_then [‘c’] assume_tac
-      \\ qabbrev_tac ‘cexp = demands_analysis_fun c case_exp’
-      \\ PairCases_on ‘cexp’
-      \\ fs []
-      \\ rw [exp_of_def]
-      \\ irule_at Any find_Let
+      \\ rw []
+      \\ fs [empty_thm, lookup_thm, TotOrd_compare, find_Bottom, exp_of_def]
+      \\ irule find_Let
       \\ first_x_assum $ irule_at Any
       \\ irule_at Any find_Bottom
-      \\ fs [empty_thm, lookup_thm, TotOrd_compare])
+      \\ fs [])
 QED
 
 Theorem demands_analysis_fun_soudness:
