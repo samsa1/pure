@@ -66,7 +66,8 @@ Definition demands_analysis_fun_def:
      (empty compare, Case a0 e n cases)
    else
      let (m, e') = demands_analysis_fun c e in
-       (empty compare, Case a0 e' n cases))
+       let cases' = MAP (λ(name,args,ce). (name, args, SND (demands_analysis_fun (Bind n e c c) ce))) cases in
+             (empty compare, Case a0 e' n cases'))
 Termination
   WF_REL_TAC ‘measure $ (cexp_size (K 0)) o SND’ \\ rw []
   \\ imp_res_tac cexp_size_lemma
@@ -161,6 +162,41 @@ Proof
   \\ first_x_assum $ qspecl_then [‘union m hd’, ‘f’] assume_tac
   \\ gvs [union_thm]
   \\ fs [UNION_ASSOC]
+QED
+
+Theorem map_does_not_changes:
+  ∀l (f: α -> α). MAP (FST o SND) l = MAP (FST o SND o (λ(a, b, c). (a, b, f c))) l
+Proof
+  Induct
+  \\ fs []
+  \\ PairCases
+  \\ fs []
+QED
+
+Theorem find_lets_for:
+  ∀l e e' n1 n2 c. find e c {} e' ⇒ find (lets_for n1 n2 l e) c {} (lets_for n1 n2 l e')
+Proof
+  cheat
+QED
+
+Theorem find_rows_of:
+  ∀l l' c s. LIST_REL (λ(a1, b1, c1) (a2, b2, c2). a1 = a2 ∧ b1 = b2 ∧ find c1 c {} c2) l l'
+         ⇒ find (rows_of s l) c {} (rows_of s l')
+Proof
+  Induct
+  \\ fs [rows_of_def, find_Bottom]
+  \\ PairCases
+  \\ rw []
+  \\ rename1 ‘y::ys’
+  \\ PairCases_on ‘y’
+  \\ fs [rows_of_def]
+  \\ irule find_Subset
+  \\ irule_at Any find_If
+  \\ irule_at Any find_Bottom
+  \\ first_x_assum $ irule_at Any
+  \\ fs []
+  \\ irule_at Any find_lets_for
+  \\ fs []
 QED
 
 Theorem demands_analysis_soudness_lemma:
@@ -414,8 +450,8 @@ Proof
       \\ first_x_assum $ irule_at Any)
   >~ [‘Case a case_exp s l’]
   >- (gen_tac
-      \\ rename1 ‘ctxt_trans c’
-      \\ first_x_assum $ qspecl_then [‘cexp_size f case_exp’] assume_tac
+      \\ rename1 ‘Bind _ _ c c’
+      \\ first_assum $ qspecl_then [‘cexp_size f case_exp’] assume_tac
       \\ gvs [cexp_size_def]
       \\ pop_assum $ qspecl_then [‘f’, ‘case_exp’] assume_tac
       \\ fs []
@@ -423,10 +459,33 @@ Proof
       \\ qabbrev_tac ‘cexp = demands_analysis_fun c case_exp’
       \\ PairCases_on ‘cexp’
       \\ rw []
-      \\ fs [empty_thm, lookup_thm, TotOrd_compare, find_Bottom, exp_of_def]
+      \\ fs [empty_thm, lookup_thm, TotOrd_compare, find_Bottom, exp_of_def, MAP_MAP_o]
+      \\ qspecl_then [‘l’] assume_tac map_does_not_changes
+      \\ pop_assum $ qspecl_then [‘SND o (demands_analysis_fun (Bind s case_exp c c))’] assume_tac
+      \\ fs []
+      \\ rw []
       \\ irule find_Let
+      \\ fs []
       \\ first_x_assum $ irule_at Any
-      \\ irule_at Any find_Bottom
+      \\ irule find_rows_of
+      \\ fs [LIST_REL_EL_EQN]
+      \\ rw [EL_MAP]
+      \\ rename1 ‘EL n l’
+      \\ qabbrev_tac ‘e = EL n l’
+      \\ PairCases_on ‘e’
+      \\ fs []
+      \\ first_x_assum $ qspecl_then [‘cexp_size f e2’] assume_tac
+      \\ ‘cexp_size f e2 < cexp1_size f l’ by metis_tac [cexp_size_lemma, EL_MEM]
+      \\ fs []
+      \\ pop_assum kall_tac
+      \\ pop_assum $ qspecl_then [‘f’, ‘e2’] assume_tac
+      \\ fs []
+      \\ pop_assum $ qspecl_then [‘Bind s case_exp c c’] assume_tac
+      \\ qabbrev_tac ‘p = demands_analysis_fun (Bind s case_exp c c) e2’
+      \\ PairCases_on ‘p’
+      \\ fs [ctxt_trans_def]
+      \\ irule find_Subset
+      \\ first_x_assum $ irule_at Any
       \\ fs [])
 QED
 
