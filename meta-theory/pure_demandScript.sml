@@ -565,107 +565,6 @@ Proof
   \\ fs [well_formed_def]
 QED
 
-(*
-Definition is_good_def:
-  is_good e = (eval_wh e ≠ wh_Error ∧ eval_wh e ≠ wh_Diverge ∧ closed e)
-End
-
-
-Definition can_commute_def:
-  can_commute  e e' = ∀f.
-                           ¬ (eval_wh (subst f e) = wh_Diverge ∧ eval_wh (subst f e') = wh_Error) ∧
-                           ¬ (eval_wh (subst f e) = wh_Error ∧ eval_wh (subst f e') = wh_Diverge)
-End
-
-Theorem can_commute_sym:
-  can_commute e e' ⇒ can_commute e' e
-Proof
-  metis_tac [can_commute_def]
-QED
-
-Theorem can_commute_Seq_com:
-  ∀e e'. can_commute e e' ⇒ ∀e''. Seq (Seq e e') e'' ≈ Seq (Seq e' e) e''
-Proof
-  rw [can_commute_def]
-  \\ irule eval_wh_IMP_exp_eq
-  \\ gen_tac
-  \\ ‘eval_wh (subst f e) = wh_Diverge ∨ eval_wh (subst f e) = wh_Error ∨ (eval_wh (subst f e) ≠ wh_Diverge ∧ eval_wh (subst f e) ≠ wh_Error)’ by rw [DISJ_EQ_IMP]
-  \\ ‘eval_wh (subst f e') = wh_Diverge ∨ eval_wh (subst f e') = wh_Error ∨ (eval_wh (subst f e') ≠ wh_Diverge ∧ eval_wh (subst f e') ≠ wh_Error)’ by rw [DISJ_EQ_IMP]
-  \\ rw [subst_def, eval_wh_Seq]
-  \\ fs []
-  \\ metis_tac []
-QED
-
-Theorem is_good_means_can_commute:
-  ∀e e'. is_good e ⇒ can_commute e e'
-Proof
-  fs [is_good_def, can_commute_def]
-QED
-
-Theorem demands_Seq_com:
-  ∀e e'. is_good e ∨ is_good e' ⇒ ∀e''. Seq (Seq e e') e'' ∼ Seq (Seq e' e) e''
-Proof
-  rw [is_good_means_can_commute]
-  \\ irule can_commute_Seq_com
-  \\ fs [is_good_means_can_commute, can_commute_sym]
-QED
-
-Theorem needs_Seq2:
-  (can_commute e (Projs ps e'')) ∧ e' needs (ps, e'')
-  ⇒ (Seq e e') needs (ps, e'')
-Proof
-  rw [DISJ_EQ_IMP]
-  \\ fs [needs_def, Projs_def]
-  \\ qabbrev_tac ‘p = Projs ps e''’
-  \\ irule exp_eq_trans \\ qexists_tac ‘Seq e (Seq p e')’
-  \\ conj_tac
-  >- (irule exp_eq_Prim_cong \\ fs [exp_eq_refl])
-  \\ irule exp_eq_trans \\ qexists_tac ‘Seq (Seq e p) e'’
-  \\ conj_tac
-  >- (‘Seq (Seq e p) e' ∼ Seq e (Seq p e')’ by fs [Seq_assoc]
-      \\ fs [exp_eq_sym])
-  \\ irule exp_eq_trans \\ qexists_tac ‘Seq (Seq p e) e'’
-  \\ fs [Seq_assoc]
-  \\ irule can_commute_Seq_com
-  \\ fs [DISJ_EQ_IMP]
-QED
-
-Theorem demands_Seq2:
-  is_good e ∧ e' demands (ps, v)
-   ⇒ (Seq e e') demands (ps, v)
-Proof
-  metis_tac [is_good_means_can_commute,needs_Var_is_demands, needs_Seq2]
-QED
-
-Theorem needs_If2_no_Diverge:
-  (∀f. eval_wh (subst f ce) ≠ wh_Diverge ∧ eval_wh (subst f e) ≠ wh_Diverge)
-  ∧ te ∼ Seq e te' ∧ ee ∼ Seq e ee'
-  ⇒ If ce te ee ∼ Seq e (If ce te' ee')
-Proof
-  rw []
-  \\ irule exp_eq_trans
-  \\ qexists_tac ‘If ce (Seq e te') (Seq e ee')’
-  \\ conj_tac
-  >- (irule exp_eq_Prim_cong \\ fs [exp_eq_refl])
-  \\ irule eval_wh_IMP_expeq
-  \\ rw [subst_def, eval_wh_Seq, eval_wh_If]
-  \\ fs []
-QED
-
-Theorem needs_If2:
-  ((is_good ce ∧ (eval_wh ce = wh_True ∨ eval_wh ce = wh_False)) ∨ is_good e') ∧ te needs ([], e') ∧ ee needs ([], e') ⇒ (If ce te ee) needs ([], e')
-Proof
-  rw [is_good_def, needs_def, Projs_def]
-  \\ irule exp_eq_trans
-  \\ qexists_tac ‘If ce (Seq e' te) (Seq e' ee)’
-  \\ conj_tac
-  \\ TRY (irule exp_eq_Prim_cong \\ fs [exp_eq_refl])
-  \\ irule eval_wh_IMP_exp_eq
-  \\ rw [subst_def, eval_wh_Seq, eval_wh_If]
-  \\ fs []
-QED
-*)
-
 Theorem needs_projs_reduce:
   ∀ps ps' e e'. e needs (ps ++ ps', e') ⇒ e needs (ps, e')
 Proof
@@ -739,7 +638,6 @@ Proof
   \\ rw []
   \\ rename1 ‘EL n l ≈ Seq p _’
   \\ qexists_tac ‘LUPDATE (Seq p (EL n l)) n l’
-(*  \\ qexists_tac ‘GENLIST (λ i. if i = n then Seq p (EL i l) else EL i l) (LENGTH l)’ *)
   \\ rw [LIST_REL_EL_EQN, EL_LUPDATE]
   >- (IF_CASES_TAC
       \\ fs [exp_eq_refl])
@@ -821,75 +719,138 @@ Proof
       \\ rw [LENGTH_MAP, LENGTH_LUPDATE, EL_MAP, EL_LUPDATE, eval_wh_Seq, subst_def])
 QED
 
-(*
-Definition fun_demands2_def:
-  f fun_demands (ps,(k:num),(n:num)) ⇒ ∀l hd v. LENGTH l = n ∧ LENGTH hd = k ∧ (l = hd++v::tl) ⇒ Apps f (MAP Var l) demands ([],v)
-End
-*)
-Definition fun_demands_pre_def:
-  fun_demands_pre (k:num) f ps = if k = 0
-                        then ∀n. n ∉ freevars f ⇒ (App f (Var n)) demands (ps, n)
-                        else ∀e. fun_demands_pre (k - 1) (App f e) ps
+val _ = set_fixity "fdemands" (Infixl 480);
+
+Definition fdemands_def:
+  f fdemands ((ps, i), k) = (i < k ∧ ∀l. LENGTH l ≥ k ⇒ (Apps f (MAP Var l)) demands (ps, EL i l))
 End
 
-val _ = set_fixity "fun_demands" (Infixl 478);
-
-Definition fun_demands_def:
-  f fun_demands (ps, k) = fun_demands_pre k f ps
+Definition find_fdemands_def:
+  find_fdemands l fd (Var n) = {[], n} ∧
+  find_fdemands l fd (Seq e1 e2) = find_fdemands l fd e1 ∪ find_fdemands l fd e2 ∧
+  find_fdemands l fd (If e1 e2 e3) = find_fdemands l fd e1 ∪
+                              (find_fdemands l fd e2 ∩ find_fdemands l fd e3) ∧
+  find_fdemands l fd e = {}
 End
-(*
-Theorem Let_Var_eq:
-  ∀e v. Let v (Var v) e ∼ e
+
+Theorem subst_Apps:
+  ∀l f e. subst f (Apps e l) = Apps (subst f e) (MAP (subst f) l)
 Proof
-  Induct \\ rw []
-  THEN1 (qsuff_tac ‘v = s ∨ v ≠ s’
-         THEN1 (DISCH_TAC \\ pop_assum DISJ_CASES_TAC
-                THEN1 (rw [] \\ fs [Let_Var])
-                \\ fs [Let_Var2])
-         \\ rw [])
-  THEN1 (irule exp_eq_trans \\ qexists_tac ‘Prim o' (MAP (Let v (Var v)) l)’
-         \\ conj_tac
-         THEN1 fs [Let_Prim]
+    Induct
+    \\ fs [Apps_def, subst_def]
 QED
-*)
-(*
-Theorem fun_demands_Lam:
-  e demands (ps, v) ⇒ (Lam v e) fun_demands (ps, 0)
+
+Theorem freevars_closed_closed:
+  ∀e f. (∀n v. FLOOKUP f n = SOME v ⇒ closed v) ∧ freevars e ⊆ FDOM f ⇒ closed (subst f e)
 Proof
-  rw [fun_demands_def, fun_demands_pre_def, demands_def]
+  Induct using freevars_ind
+  \\ rw []
+  >- (gvs [FLOOKUP_DEF, subst_def]
+      \\ first_x_assum irule
+      \\ first_x_assum $ irule_at Any
+      \\ fs [EL_MEM, MEM_MAP]
+      \\ rename1 ‘EL n es’
+      \\ qexists_tac ‘EL n es’
+      \\ fs [EL_MEM])
+  >- (rw [EVERY_EL, EL_MAP, subst_def]
+      \\ last_x_assum irule
+      \\ fs [BIGUNION_SUBSET, EL_MEM]
+      \\ first_x_assum $ irule_at Any
+      \\ fs [MEM_MAP]
+      \\ conj_tac
+      \\ fs []
+      \\ rename1 ‘EL n es’
+      \\ qexists_tac ‘EL n es’
+      \\ fs [EL_MEM])
+  >- (rw [subst_def]
+      \\ last_x_assum irule
+      \\ metis_tac [])
+  \\ cheat
+QED
+
+Theorem Letrec_not_user_first:
+  ∀l2 l1 m h e2 n. MEM m l1 ⇒
+            App (Letrec [(n, Lams (h::l1) (Var m))] (Var n)) e2
+                 ≈ Letrec [(n, Lams l1 (Var m))] (Var n)
+Proof
+  rw []
+  \\ irule eval_wh_IMP_exp_eq
+  \\ rw [subst_def, eval_wh_thm, FLOOKUP_FDIFF, subst_funs_def, bind_def,
+         FUPDATE_LIST, FLOOKUP_UPDATE, Lams_def]
+  \\ cheat
+QED
+
+
+Theorem demands_letRec:
+  ∀l l' i. LENGTH l ≤ LENGTH l' ∧ i < LENGTH l ⇒ Apps (Letrec [(n, Lams l (Var (EL i l)))] (Var n)) (MAP Var l') demands ([], EL i l')
+Proof
+  Induct
+  \\ fs [demands_def, Projs_def]
+  \\ rw []
+  \\ rename1 ‘MAP Var l'’
+  \\ Cases_on ‘l'’
+  \\ fs []
+  \\ rename1 ‘Lams (h1::tl1)’
+  \\ rename1 ‘Var h2::MAP Var tl2’
+  \\ fs [Apps_def]
+  \\ Cases_on ‘i’
+  \\ fs []
+  >-  (irule eval_wh_IMP_exp_eq
+       \\ rw []
+       \\ fs [subst_def, subst_Apps, eval_wh_Seq, FLOOKUP_FDIFF]
+       \\ cheat)
   \\ irule exp_eq_trans
-  THEN1 (qexists_tac ‘Let v (Var n) (Seq (Projs ps (Var v)) e)’
-         \\ conj_tac
-         THEN1 (irule exp_eq_App_cong \\ fs [exp_eq_refl]
-                \\ irule exp_eq_Lam_cong \\ fs [])
-         \\ irule exp_eq_trans \\ qexists_tac ‘Seq (Let v (Var n) (Projs ps (Var v))) (Let v (Var n) e)’
-         \\ conj_tac
-         THEN1 fs [Let_Seq]
-         \\ irule exp_eq_Prim_cong
-         \\ fs [exp_eq_refl]
-         \\ irule exp_eq_trans \\ qexists_tac ‘Projs ps (Let v (Var n) (Var v))’
-         \\ conj_tac
-         THEN1 fs [Let_Projs]
-         \\ irule exp_eq_Projs_cong \\ fs [Let_Var])
-  \\ qexists_tac ‘e’ \\ conj_tac
-  THEN1 fs [Let_Var_eq]
-  \\ irule exp_eq_trans \\ qexists_tac ‘Seq (Projs ps (Var n)) e’
-  THEN1 fs []
-  \\ irule exp_eq_Prim_cong \\ fs [exp_eq_refl]
+  \\ cheat
 QED
 
-Theorem fun_demands_Let:
-  ∀f. (f fun_demands (ps, k) ⇒ ∀e v. (App (Lam v f) e) fun_demands (ps, k))
+Theorem find_fdemands_soudness:
+  ∀e fd m l n. m = find_fdemands l fd e ∧
+               (∀n ps i len. (n, (ps, i), len) ∈ fd ⇒ i < len) ∧
+             (∀ps i. i < LENGTH l ∧ (n, (ps, i), LENGTH l) ∈ fd ⇒ (ps, EL i l) ∈ m)
+             ⇒ (∀d. (n, d, LENGTH l) ∈ fd ⇒ (Letrec [(n, Lams l e)] (Var n)) fdemands (d, LENGTH l))
 Proof
-  rw [fun_demands_def, Once fun_demands_pre_def, demands_def]
-  THEN1 (rw [fun_demands_pre_def]
-   \\ rw [demands_def]
-   \\ irule exp_eq_trans \\ qexists_tac ‘Let v e (App f (Var n))’
-   \\ conj_tac
-   THEN1 (irule exp_eq_trans \\ qexists_tac ‘App (Let v e f) (Let v e (Var n))’
-    \\ conj_tac
-    THEN1 (irule exp_eq_App_cong \\ fs [exp_eq_refl])
-*)
+  completeInduct_on ‘exp_size e’
+  \\ Cases
+  \\ fs [find_fdemands_def]
+  \\ strip_tac
+  \\ rpt gen_tac
+  \\ strip_tac
+  \\ PairCases
+  \\ rw [fdemands_def]
+  \\ first_assum drule
+  \\ fs []
+  \\ strip_tac
+  >~[‘App _ _’]
+  >- (first_x_assum $ qspecl_then [‘d0’, ‘d1’] assume_tac
+      \\ gvs [])
+  >~[‘Lam _ _’]
+  >- (first_x_assum $ qspecl_then [‘d0’, ‘d1’] assume_tac
+      \\ gvs [])
+  >~[‘Letrec [(_, Lams _ (Letrec _ _))]’]
+  >- (first_x_assum $ qspecl_then [‘d0’, ‘d1’] assume_tac
+      \\ gvs [])
+  >~[‘Prim ope exprl’]
+  >- (Cases_on ‘ope’
+      \\ fs [find_fdemands_def]
+      >~[‘Prim Seq _’]
+      >- cheat
+      >~[‘Prim If _’]
+      >- cheat
+      \\ Cases_on ‘exprl’
+      \\ first_x_assum $ qspecl_then [‘d0’, ‘d1’] assume_tac
+      \\ gvs [find_fdemands_def])
+  >- (first_assum $ qspecl_then [‘d0’, ‘d1’] assume_tac
+      \\ gvs [demands_def, Projs_def]
+      \\ irule eval_wh_IMP_exp_eq
+      \\ last_x_assum $ kall_tac
+      \\ last_x_assum $ kall_tac
+      \\ last_x_assum $ kall_tac
+      \\ last_x_assum $ kall_tac
+      \\ Induct_on ‘l'’
+      \\ fs []
+      \\ rw [subst_def, subst_Apps]
+      \\ cheat)
+QED
 
 Theorem exp_eq_Apps_cong:
   ∀l l' b e e'. LIST_REL (λx y. (x ≅? y) b) l l' ⇒ (e ≅? e') b ⇒ (Apps e l ≅? Apps e' l') b
