@@ -30,12 +30,16 @@ Definition adds_demands_def:
        | _ => adds_demands a0 (m, e) tl)
 End
 
+Definition add_all_demands_def:
+  add_all_demands a (m, e) = foldrWithKey (λ id () e. Prim a Seq [Var a (explode id); e] ) e m
+End
+
 Definition demands_analysis_fun_def:
   (demands_analysis_fun c ((Var a0 a1): 'a cexp) =
     (mlmap$insert (mlmap$empty mlstring$compare) (implode a1) (), (Var a0 a1 : 'a cexp))) ∧
   (demands_analysis_fun c (App a0 f argl) =
      let (m1, f') = demands_analysis_fun c f in
-       let e' = MAP SND ((MAP (demands_analysis_fun c)) argl) in
+       let e' = MAP (λe. add_all_demands a0 (demands_analysis_fun c e)) argl in
          (m1, App a0 f' e')) ∧
   (demands_analysis_fun c (Lam a0 vl e) =
      let (m, e') = demands_analysis_fun (IsFree vl c) e in
@@ -77,6 +81,8 @@ Termination
   \\ fs []
 End
 
+(** Proof **)
+
 Definition update_ctxt_def:
   (update_ctxt id n c [] = c) ∧
   (update_ctxt id n c ((i,p)::tl) =
@@ -110,15 +116,37 @@ Proof
   \\ fs [explode_implode]
 QED
 
-(*
-Theorem test:
-  exp_of (Prim 0 Seq [x; y; z]) ≅ exp_of (Prim 0 Seq [])
+Theorem add_all_demands_soundness:
+  ∀m s cmp a e e'.
+    TotOrd cmp ∧
+    find (exp_of e) c (s ∪ IMAGE (λx. ([], explode x)) (FDOM (to_fmap (Map cmp m)))) (exp_of e')
+    ⇒ find (exp_of e) c (s ∪ IMAGE (λx. ([], explode x)) (FDOM (to_fmap (Map cmp m))))
+           (exp_of (add_all_demands a (Map cmp m, e')))
 Proof
-  rw [exp_of_def, op_of_def]
-  \\ irule eval_wh_IMP_exp_eq
-  \\ rw [subst_def, eval_wh_def, eval_wh_to_def]
+  Induct
+  \\ fs [add_all_demands_def, foldrWithKey_def, balanced_mapTheory.foldrWithKey_def, to_fmap_def]
+  \\ rw [Once INSERT_SING_UNION]
+  \\ rw [Once INSERT_SING_UNION]
+  \\ rename1 ‘s ∪ ({([], explode k)} ∪ _)’
+  \\ last_x_assum $ qspecl_then [‘s ∪ {([], explode k)} ∪ (IMAGE (λx. ([],explode x)) (FDOM (to_fmap (Map cmp m'))))’, ‘cmp’] assume_tac
+  \\ qabbrev_tac ‘set1=IMAGE (λx. ([]:(string#num) list,explode x)) (FDOM (to_fmap (Map cmp m)))’
+  \\ qabbrev_tac ‘set2=IMAGE (λx. ([]:(string#num) list,explode x)) (FDOM (to_fmap (Map cmp m')))’
+  \\ ‘s ∪ ({([], explode k)} ∪ (set1 ∪ set2)) = (s ∪ {([], explode k)} ∪ set2) ∪ set1’
+    by metis_tac [UNION_ASSOC, UNION_COMM]
+  \\ rw []
+  \\ first_x_assum irule
+  \\ fs []
+  \\ pop_assum kall_tac
+  \\ ‘(s ∪ {([], explode k)} ∪ set2) ∪ set1 = (s ∪ {([], explode k)} ∪ set1) ∪ set2’
+    by metis_tac [UNION_ASSOC, UNION_COMM]
+  \\ rw [exp_of_def, op_of_def]
+  \\ irule find_Seq
+  \\ unabbrev_all_tac
+  \\ first_x_assum $ irule_at Any
+  \\ fs []
+  \\ qexists_tac ‘[]’
+  \\ fs []
 QED
-*)
 
 Theorem FOLDL_union_map_ok:
   ∀l cmp m. TotOrd cmp ∧ EVERY (λm. map_ok m ∧ cmp_of m = cmp) l ∧ map_ok m ∧ cmp_of m = cmp ⇒
@@ -383,7 +411,11 @@ Proof
       \\ qabbrev_tac ‘p = demands_analysis_fun c (EL n argl)’
       \\ PairCases_on ‘p’
       \\ fs [EL_MAP]
-      \\ first_x_assum $ irule_at Any)
+      \\ Cases_on ‘p0’
+      \\ irule_at Any add_all_demands_soundness
+      \\ fs [cmp_of_def, TotOrd_compare]
+      \\ qexists_tac ‘{}’
+      \\ fs [])
   >~ [‘Lam a namel e’]
   >- (rw []
       \\ first_assum $ qspecl_then [‘cexp_size f e’] assume_tac
