@@ -424,6 +424,21 @@ Proof
   \\ fs [exp_eq_refl, exp_eq_sym]
 QED
 
+Theorem needs_exp_eq:
+  ∀e e' d. e ≈ e' ⇒ e needs d ⇒ e' needs d
+Proof
+  gen_tac
+  \\ gen_tac
+  \\ Cases
+  \\ rw [needs_def]
+  \\ irule exp_eq_trans
+  \\ irule_at Any $ iffLR exp_eq_sym
+  \\ first_assum $ irule_at Any
+  \\ irule exp_eq_trans
+  \\ pop_assum $ irule_at Any
+  \\ fs [exp_eq_Prim_cong, exp_eq_refl]
+QED
+
         (********************************************)
 
 Theorem demands_Var:
@@ -498,6 +513,23 @@ Proof
   \\ conj_tac THEN1 fs [Let_Projs]
   \\ irule exp_eq_Projs_cong
   \\ fs [Let_Var2]
+QED
+
+Theorem demands_Let3:
+  ∀e v h ps. e demands (ps, v) ⇒ (Let v (Var h) e) demands (ps, h)
+Proof
+  rw [demands_def]
+  \\ irule exp_eq_trans
+  \\ qexists_tac ‘Let v (Var h) (Seq (Projs ps (Var v)) e)’
+  \\ irule_at Any exp_eq_App_cong \\ fs [exp_eq_refl]
+  \\ irule_at Any exp_eq_Lam_cong \\ fs []
+  \\ irule exp_eq_trans
+  \\ irule_at Any Let_Seq
+  \\ irule exp_eq_Prim_cong \\ fs [exp_eq_refl]
+  \\ irule exp_eq_trans
+  \\ irule_at Any Let_Projs
+  \\ irule exp_eq_Projs_cong
+  \\ fs [Let_Var]
 QED
 
 Theorem demands_Let_Proj: (* expects program to be in ANF *)
@@ -719,32 +751,97 @@ Proof
       \\ rw [LENGTH_MAP, LENGTH_LUPDATE, EL_MAP, EL_LUPDATE, eval_wh_Seq, subst_def])
 QED
 
+Theorem exp_eq_Apps_cong:
+  ∀l l' b e e'. LIST_REL (λx y. (x ≅? y) b) l l' ⇒ (e ≅? e') b ⇒ (Apps e l ≅? Apps e' l') b
+Proof
+  Induct
+  \\ fs [Apps_def]
+  \\ rw [Apps_def]
+  \\ fs [Apps_def]
+  \\ first_x_assum $ irule
+  \\ fs [exp_eq_App_cong]
+QED
+
+Theorem exp_eq_Lams_cong:
+  ∀l e e' b. (e ≅? e') b ⇒ (Lams l e ≅? Lams l e') b
+Proof
+  Induct
+  \\ rw [Lams_def]
+  \\ fs [exp_eq_Lam_cong]
+QED
+
+Theorem Apps_demands:
+  ∀el d e. e demands d ⇒ Apps e el demands d
+Proof
+  Induct
+  \\ fs [Apps_def]
+  \\ gen_tac
+  \\ rw []
+  \\ first_x_assum irule
+  \\ fs [demands_App]
+QED
+
+Theorem exp_eq_same_demands:
+  ∀d e e'. e ≈ e' ⇒ e demands d ⇒ e' demands d
+Proof
+  PairCases
+  \\ rw [demands_def]
+  \\ irule exp_eq_trans
+  \\ rw [Once exp_eq_sym]
+  \\ first_assum $ irule_at Any
+  \\ irule exp_eq_trans
+  \\ first_x_assum $ irule_at Any
+  \\ fs [exp_eq_Prim_cong, exp_eq_refl]
+QED
+
+Theorem last_Apps:
+  ∀l x e. Apps e (l ++ [x]) = App (Apps e l) x
+Proof
+  Induct
+  \\ fs [Apps_def]
+QED
+
+Theorem last_Lams:
+  ∀l x e. Lams (l ++ [x]) e = Lams l (Lam x e)
+Proof
+  Induct
+  \\ fs [Lams_def]
+QED
+
 val _ = set_fixity "fdemands" (Infixl 480);
 
 Definition fdemands_def:
-  f fdemands ((ps, i), k) = (i < k ∧ ∀l. LENGTH l ≥ k ⇒ (Apps f (MAP Var l)) demands (ps, EL i l))
+  f fdemands ((ps, i), k) = (i < k ∧ ∃s. FINITE s ∧ ∀l. (set l ∩ s = {} ∧ LENGTH l = k) ⇒ (Apps f (MAP Var l)) demands (ps, EL i l))
 End
 
-Definition find_fdemands_def:
-  find_fdemands l fd (Var n) = {[], n} ∧
-  find_fdemands l fd (Seq e1 e2) = find_fdemands l fd e1 ∪ find_fdemands l fd e2 ∧
-  find_fdemands l fd (If e1 e2 e3) = find_fdemands l fd e1 ∪
-                              (find_fdemands l fd e2 ∩ find_fdemands l fd e3) ∧
-  find_fdemands l fd e = {}
-End
-
-Theorem subst_Apps:
-  ∀l f e. subst f (Apps e l) = Apps (subst f e) (MAP (subst f) l)
+Theorem exists_str_not_in_list:
+  ∀l. ∃(s : string). ¬ MEM s l
 Proof
-    Induct
-    \\ fs [Apps_def, subst_def]
+  qsuff_tac `INFINITE 𝕌(:string)`
+  >- rw[pred_setTheory.NOT_IN_FINITE]
+  >- simp[]
 QED
 
-Theorem freevars_closed_closed:
-  ∀e f. (∀n v. FLOOKUP f n = SOME v ⇒ closed v) ∧ freevars e ⊆ FDOM f ⇒ closed (subst f e)
+Theorem exists_l_not_in_s:
+  ∀(s : string -> bool) k. FINITE s ⇒ ∃l. ALL_DISTINCT l ∧ EVERY (λx. x ∉ s) l ∧ LENGTH l = k
+Proof
+  gen_tac
+  \\ Induct
+  \\ rw []
+  \\ first_x_assum drule
+  \\ rw []
+  \\ ‘INFINITE 𝕌(:string)’ by simp []
+  \\ ‘∃hd. hd ∉ s ∪ set l’ by
+    fs [NOT_IN_FINITE, FINITE_UNION, FINITE_LIST_TO_SET]
+  \\ qexists_tac ‘hd::l’
+  \\ gvs []
+QED
+(*
+Theorem freevars_closed_subset:
+  ∀e f. (∀n v. FLOOKUP f n = SOME v ⇒ closed v) ⇒ freevars (subst f e) ⊆ (freevars e) DIFF (FDOM f)
 Proof
   Induct using freevars_ind
-  \\ rw []
+  \\ rw [closed_def]
   >- (gvs [FLOOKUP_DEF, subst_def]
       \\ first_x_assum irule
       \\ first_x_assum $ irule_at Any
@@ -752,21 +849,616 @@ Proof
       \\ rename1 ‘EL n es’
       \\ qexists_tac ‘EL n es’
       \\ fs [EL_MEM])
-  >- (rw [EVERY_EL, EL_MAP, subst_def]
+  >- rw [subst_def, FLOOKUP_DEF]
+  >- (rw [subst_def, SUBSET_DEF, MEM_EL, MAP_MAP_o]
+      \\ rename1 ‘n < LENGTH es’
+      \\ last_x_assum $ qspecl_then [‘EL n es’] assume_tac
+      \\ gvs [EL_MAP, EL_MEM, closed_def]
+      \\ pop_assum $ qspecl_then [‘f’] assume_tac
+      \\ pop_assum drule
+      \\ strip_tac
+      \\ gvs [SUBSET_DEF]
+      \\ qexists_tac ‘freevars (EL n es)’
+      \\ first_assum $ irule_at Any
+      \\ gvs [EL_MAP])
+  >- (fs [closed_def]
+      \\ first_x_assum $ qspecl_then [‘f’] assume_tac
+      \\ pop_assum drule
+      \\ first_x_assum $ qspecl_then [‘f’] assume_tac
+      \\ pop_assum drule
+      \\ rw [subst_def, SUBSET_DEF, IN_DIFF]
+      \\ first_x_assum dxrule
+      \\ rw [])
+  >- (first_x_assum $ qspecl_then [‘f \\ n’] assume_tac
+      \\ fs [closed_def]
+      \\ ‘∀n' v. FLOOKUP (f \\ n) n' = SOME v ⇒ freevars v = {}’
+        by (rw [] \\ Cases_on ‘n = n'’
+            \\ first_x_assum irule
+            \\ gvs [DOMSUB_FLOOKUP_NEQ]
+            \\ first_x_assum $ irule_at Any)
+      \\ first_x_assum dxrule
+      \\ rw [subst_def, closed_def, SUBSET_DEF, IN_DIFF, DELETE_DEF]
+      \\ first_x_assum dxrule
+      \\ rw [])
+  \\ gvs [SUBSET_DEF, IN_DIFF, closed_def, subst_def]
+  \\ first_x_assum $ qspecl_then [‘FDIFF f (set (MAP FST lcs))’] assume_tac
+  \\ ‘∀n v. FLOOKUP (FDIFF f (set (MAP FST lcs))) n = SOME v ⇒ freevars v = {}’
+    by (rw []
+        \\ first_x_assum irule
+        \\ gvs [FLOOKUP_DEF, FDOM_FDIFF, DRESTRICT_DEF, FDIFF_def]
+        \\ first_x_assum $ irule_at Any
+        \\ fs [])
+  \\ first_x_assum drule
+  \\ rw [] \\ gvs []
+  >- (first_x_assum dxrule
+      \\ rw [MEM_EL]
+      \\ strip_tac
       \\ last_x_assum irule
-      \\ fs [BIGUNION_SUBSET, EL_MEM]
-      \\ first_x_assum $ irule_at Any
-      \\ fs [MEM_MAP]
-      \\ conj_tac
+      \\ gvs [EL_MAP, MEM_MAP]
+      \\ rename1 ‘EL n lcs’
+      \\ qabbrev_tac ‘p = EL n lcs’
+      \\ PairCases_on ‘p’
+      \\ qexists_tac ‘(p0, subst (FDIFF f (set (MAP FST lcs))) p1)’
       \\ fs []
-      \\ rename1 ‘EL n es’
-      \\ qexists_tac ‘EL n es’
-      \\ fs [EL_MEM])
-  >- (rw [subst_def]
-      \\ last_x_assum irule
-      \\ metis_tac [])
-  \\ cheat
+      \\ qexists_tac ‘(p0, p1)’
+      \\ fs [MEM_EL]
+      \\ last_x_assum $ irule_at Any
+      \\ fs [])
+  >- (first_x_assum dxrule
+      \\ rw [MEM_EL]
+      \\ rename1 ‘EL n _’
+      \\ strip_tac
+      \\ first_x_assum irule
+      \\ gvs [EL_MAP, MEM_MAP]
+      \\ ‘MEM (EL n lcs) lcs’ by gvs [EL_MEM]
+      \\ pop_assum $ irule_at Any
+      \\ qabbrev_tac ‘p = EL n lcs’
+      \\ PairCases_on ‘p’
+      \\ fs [])
+  >- (DISJ2_TAC
+      \\ dxrule $ iffLR MEM_EL
+      \\ rw []
+      \\ rename1 ‘n < LENGTH lcs’
+      \\ last_x_assum $ qspecl_then [‘FST (EL n lcs)’, ‘SND (EL n lcs)’] assume_tac
+      \\ gvs [EL_MEM, EL_MAP]
+      \\ pop_assum dxrule
+      \\ rw []
+      \\ qabbrev_tac ‘p = EL n lcs’
+      \\ PairCases_on ‘p’
+      \\ gvs []
+      \\ first_x_assum dxrule
+      \\ rw []
+      \\ pop_assum kall_tac
+      \\ pop_assum $ irule_at Any
+      \\ gvs [MEM_EL]
+      \\ first_assum $ irule_at Any
+      \\ fs [EL_MAP])
+  >- (rw [MEM_EL]
+      \\ strip_tac
+      \\ first_x_assum irule
+      \\ gvs [MEM_EL, EL_MAP]
+      \\ first_assum $ irule_at Any
+      \\ gvs [EL_MAP]
+      \\ rename1 ‘FST p’
+      \\ PairCases_on ‘p’
+      \\ fs [])
+  >- (dxrule $ iffLR MEM_EL
+      \\ rw []
+      \\ rename1 ‘n < LENGTH lcs’
+      \\ last_x_assum $ qspecl_then [‘FST (EL n lcs)’, ‘SND (EL n lcs)’] assume_tac
+      \\ gvs [EL_MEM, EL_MAP]
+      \\ pop_assum dxrule
+      \\ rw []
+      \\ qabbrev_tac ‘p = EL n lcs’
+      \\ PairCases_on ‘p’
+      \\ gvs []
+      \\ first_x_assum dxrule
+      \\ rw []
+      \\ strip_tac
+      \\ first_x_assum irule
+      \\ gvs [MEM_EL, EL_MAP]
+      \\ first_assum $ irule_at Any
+      \\ gvs [EL_MAP]
+      \\ rename1 ‘FST p’
+      \\ PairCases_on ‘p’
+      \\ fs [])
 QED
+
+Theorem freevars_closed_closed:
+  ∀e f. (∀n v. FLOOKUP f n = SOME v ⇒ closed v) ∧ freevars e ⊆ FDOM f ⇒ closed (subst f e)
+Proof
+  rw []
+  \\ dxrule freevars_closed_subset
+  \\ rw [closed_def]
+  \\ irule $ iffLR SUBSET_EMPTY
+  \\ irule SUBSET_TRANS
+  \\ pop_assum $ irule_at Any
+  \\ gvs [SUBSET_DIFF_EMPTY, SUBSET_EMPTY]
+QED
+*)
+
+Theorem DRESTRICT_DOMSUB_COMM:
+  ∀f v s. DRESTRICT (f \\ v) s = (DRESTRICT f s) \\ v
+Proof
+  fs [EQ_FDOM_SUBMAP]
+  \\ rw [DRESTRICT_DEF, DELETE_INTER, SUBMAP_DEF, DOMSUB_FAPPLY_THM]
+QED
+
+Theorem subst_does_not_change:
+  ∀e v f. v ∉ freevars e ⇒ subst f e = subst (f \\ v) e
+Proof
+  Induct using freevars_ind
+  \\ rw [subst_def, freevars_def, DOMSUB_FLOOKUP_NEQ, MAP_EQ_f, FDIFF_def]
+  \\ gvs [DOMSUB_COMMUTES]
+  >- (first_x_assum $ irule
+      \\ fs []
+      \\ first_x_assum $ qspecl_then [‘freevars a’] assume_tac
+      \\ fs [MEM_EL]
+      \\ pop_assum $ qspecl_then [‘n’] assume_tac
+      \\ gvs [EL_MAP])
+  >>~[‘subst (DRESTRICT _ _) _ = subst _ _’]
+  >- gvs [DRESTRICT_DOMSUB_COMM]
+  >- (rename1 ‘DRESTRICT f (COMPL (set l))’
+      \\ AP_THM_TAC
+      \\ AP_TERM_TAC
+      \\ gvs [DRESTRICT_EQ_DRESTRICT]
+      \\ irule_at Any DOMSUB_SUBMAP
+      \\ fs [FDOM_DRESTRICT]
+      \\ irule_at Any SUBMAP_TRANS
+      \\ irule_at Any DRESTRICT_SUBMAP
+      \\ fs [DOMSUB_SUBMAP]
+      \\ qspecl_then [‘FDOM f’, ‘COMPL (set l)’, ‘v’] assume_tac DELETE_INTER
+      \\ fs [Once INTER_COMM]
+      \\ fs [GSYM DELETE_NON_ELEMENT])
+  \\ rename1 ‘_ e' = _ e'’
+  \\ PairCases_on ‘e'’
+  \\ fs []
+  >- (last_x_assum drule
+      \\ gvs [DRESTRICT_DOMSUB_COMM]
+      \\ rw []
+      \\ pop_assum irule
+      \\ rename1 ‘MEM (v2, e2) lcs’
+      \\ first_x_assum $ qspecl_then [‘freevars e2’] assume_tac
+      \\ fs [MEM_MAP]
+      \\ pop_assum $ qspecl_then [‘(v2, e2)’] assume_tac
+      \\ fs [])
+  >- (rename1 ‘DRESTRICT f (COMPL (set l))’
+      \\ AP_THM_TAC
+      \\ AP_TERM_TAC
+      \\ gvs [DRESTRICT_EQ_DRESTRICT]
+      \\ irule_at Any DOMSUB_SUBMAP
+      \\ fs [FDOM_DRESTRICT]
+      \\ irule_at Any SUBMAP_TRANS
+      \\ irule_at Any DRESTRICT_SUBMAP
+      \\ fs [DOMSUB_SUBMAP]
+      \\ qspecl_then [‘FDOM f’, ‘COMPL (set l)’, ‘v’] assume_tac DELETE_INTER
+      \\ fs [Once INTER_COMM]
+      \\ fs [GSYM DELETE_NON_ELEMENT])
+QED
+
+Theorem closed_subst2:
+  ∀v f e e'. (∀v. v ∈ FRANGE f ⇒ closed v) ⇒ closed e ⇒ freevars e' ⊆ FDOM f ⇒ (closed (subst f e') ∧ closed (subst1 v e (subst (f \\ v) e')))
+Proof
+  rw []
+  \\ rw [closed_def]
+  \\ ‘∀v2. v2 ∈ FRANGE (f \\ v) ⇒ closed v2’
+    by (rw []
+        \\ first_x_assum irule
+        \\ metis_tac [FRANGE_DOMSUB_SUBSET, SUBSET_DEF])
+  \\ dxrule freevars_subst
+  \\ dxrule freevars_subst
+  \\ dxrule freevars_subst1
+  \\ rw []
+  \\ gvs [SUBSET_DIFF_EMPTY, DELETE_DEF, SUBSET_DEF]
+  \\ rw []
+  \\ gvs []
+QED
+
+Theorem App_Let:
+  ∀v e e' e'' b. v ∉ freevars e'' ⇒ (App (Let v e e') e'' ≅? Let v e (App e' e'')) b
+Proof
+  rw []
+  \\ irule eval_wh_IMP_exp_eq
+  \\ rw []
+  \\ gvs [subst_def, eval_wh_thm]
+  \\ ‘∀v. v ∈ FRANGE f ⇒ closed v’ by gvs [FRANGE_FLOOKUP]
+  \\ ‘closed (subst f e)’ by gvs [closed_def, freevars_subst, SUBSET_DIFF_EMPTY]
+  \\ fs [bind1_def, subst1_def, eval_wh_App]
+  \\ IF_CASES_TAC
+  \\ fs []
+  \\ rename1 ‘(subst1 v (subst f e) (subst (f \\ v) e'))’
+  \\ Cases_on ‘dest_wh_Closure (eval_wh (subst1 v (subst f e) (subst (f \\ v) e')))’
+  \\ fs []
+  \\ rename1 ‘SOME x’
+  \\ PairCases_on ‘x’
+  \\ fs []
+  \\ qspecl_then [‘v’, ‘f’, ‘subst f e’, ‘e''’] assume_tac closed_subst2
+  \\ gvs []
+  \\ AP_TERM_TAC
+  \\ AP_THM_TAC
+  \\ AP_TERM_TAC
+  \\ AP_TERM_TAC
+  \\ fs []
+  \\ simp [GSYM subst_does_not_change]
+QED
+
+Theorem Apps_Let:
+  ∀l v e e' b. EVERY (λe. v ∉ freevars e) l ⇒ (Apps (Let v e e') l ≅? Let v e (Apps e' l)) b
+Proof
+  Induct
+  \\ fs [Apps_def, exp_eq_refl]
+  \\ rw []
+  \\ first_x_assum dxrule
+  \\ rw []
+  \\ dxrule App_Let
+  \\ strip_tac
+  \\ irule exp_eq_trans
+  \\ first_x_assum $ irule_at Any
+  \\ irule exp_eq_Apps_cong
+  \\ fs [exp_eq_l_refl]
+QED
+
+Theorem Apps_Lams_fold:
+  ∀l eL e b. EVERY (λx. EVERY (λe. x ∉ freevars e) eL) l ∧ LENGTH l = LENGTH eL ⇒
+             (Apps (Lams l e) eL ≅?  FOLDR (λ (id, e') e. Let id e' e) e (ZIP (l, eL))) b
+Proof
+  Induct
+  \\ fs [Lams_def, Apps_def, exp_eq_refl]
+  \\ gen_tac
+  \\ Cases
+  \\ fs [Apps_def, ZIP_def]
+  \\ rw []
+  \\ irule exp_eq_trans
+  \\ irule_at Any exp_eq_App_cong
+  \\ irule_at Any exp_eq_Lam_cong
+  \\ first_x_assum $ irule_at Any
+  \\ fs []
+  \\ irule_at Any Apps_Let
+  \\ gvs [exp_eq_refl, EVERY_CONJ]
+QED
+
+Theorem LetsSeq_com:
+  ∀l e e' b. (FOLDR (λ (id, e') e. Let id e' e) (Seq e e') l ≅?
+                 Seq (FOLDR (λ (id, e') e. Let id e' e) e l) (FOLDR (λ (id, e') e. Let id e' e) e' l)) b
+Proof
+  Induct
+  \\ fs [exp_eq_refl]
+  \\ Cases
+  \\ rw []
+  \\ irule exp_eq_trans
+  \\ irule_at Any exp_eq_App_cong
+  \\ irule_at Any exp_eq_Lam_cong
+  \\ pop_assum $ irule_at Any
+  \\ irule_at Any exp_eq_refl
+  \\ fs [Let_Seq]
+QED
+
+Theorem Apps_Lams_Seq_strong:
+  ∀l eL e p b. EVERY (λx. EVERY (λe. x ∉ freevars e) eL) l ∧ LENGTH l = LENGTH eL ⇒
+                     (Apps (Lams l (Seq p e)) eL ≅? Seq (Apps (Lams l p) eL) (Apps (Lams l e) eL)) b
+Proof
+  rw []
+  \\ irule exp_eq_trans
+  \\ irule_at Any Apps_Lams_fold
+  \\ fs []
+  \\ irule exp_eq_trans
+  \\ irule_at Any LetsSeq_com
+  \\ irule_at Any exp_eq_Prim_cong
+  \\ gvs [Apps_Lams_fold, exp_eq_sym]
+QED
+
+Theorem fdemands_every_thing:
+  f fdemands ((ps, i), k) ⇔ (i < k ∧ ∀el. LENGTH el = k ⇒ (Apps f el) needs (ps, EL i el))
+Proof
+  eq_tac
+  \\ rw [fdemands_def]
+  >- (rename1 ‘EL i eL’
+      \\ qspecl_then [‘freevars f ∪ s ∪ BIGUNION (set (MAP freevars eL))’, ‘LENGTH eL’] assume_tac exists_l_not_in_s
+      \\ ‘∀s. MEM s (MAP freevars eL) ⇒ FINITE s’ by (rw [MEM_EL] \\ gvs [EL_MAP])
+      \\ gvs [FINITE_UNION, freevars_FINITE, FINITE_BIGUNION]
+      \\ rename1 ‘ALL_DISTINCT l’
+      \\ first_x_assum $ qspecl_then [‘l’] assume_tac
+      \\ irule needs_exp_eq
+      \\ qexists_tac ‘Apps (Lams l (Apps f (MAP Var l))) eL’
+      \\ conj_tac
+      >- (gvs [needs_def, demands_def]
+          \\ irule exp_eq_trans
+          \\ irule_at Any exp_eq_Apps_cong
+          \\ irule_at Any exp_eq_l_refl
+          \\ irule_at Any exp_eq_Lams_cong
+          \\ pop_assum $ irule_at Any
+          \\ conj_tac
+          >- (irule $ iffLR SUBSET_EMPTY
+              \\ irule $ iffRL SUBSET_DEF
+              \\ gvs [IN_INTER, DISJ_EQ_IMP, EVERY_MEM])
+          \\ irule exp_eq_trans
+          \\ irule_at Any Apps_Lams_Seq_strong
+          \\ irule_at Any exp_eq_Prim_cong
+          \\ gvs [EVERY_MEM, exp_eq_refl]
+          \\ rw []
+          >- cheat
+          \\ first_x_assum dxrule
+          \\ rw []
+          \\ pop_assum $ qspecl_then [‘freevars e’] assume_tac
+          \\ fs [MEM_MAP]
+          \\ pop_assum $ qspecl_then [‘e’] assume_tac
+          \\ gvs [])
+      \\ cheat)
+  >- (qexists_tac ‘{}’
+      \\ rw []
+      \\ pop_assum $ qspecl_then [‘MAP Var l’] assume_tac
+      \\ gvs [EL_MAP, needs_Var_is_demands])
+QED
+
+Definition find_fdemands_def:
+  find_fdemands fd (Var n) = {[], n} ∧
+  find_fdemands fd (Seq e1 e2) = find_fdemands fd e1 ∪ find_fdemands fd e2 ∧
+  find_fdemands fd (If e1 e2 e3) = find_fdemands fd e1 ∪
+                              (find_fdemands fd e2 ∩ find_fdemands fd e3) ∧
+  find_fdemands fd e = {}
+End
+
+Theorem find_fdemands_soundness:
+  ∀e fd. (∀n p k. (n, p, k) ∈ fd ⇒ (Var n) fdemands (p, k)) ⇒ ∀d. d ∈ find_fdemands fd e ⇒ e demands d
+Proof
+  Induct using freevars_ind
+  \\ fs [find_fdemands_def, demands_Var]
+  \\ rename1 ‘Prim op es’
+  \\ Cases_on ‘op’
+  \\ Cases_on ‘es’
+  \\ fs [find_fdemands_def]
+  \\ rename1 ‘e1::tl’
+  \\ Cases_on ‘tl’
+  \\ fs [find_fdemands_def]
+  \\ rename1 ‘e1::e2::tl’
+  \\ Cases_on ‘tl’
+  \\ fs [find_fdemands_def]
+  >~ [‘Prim If (e1::e2::e3::t)’]
+  >- (Cases_on ‘t’
+      \\ fs [find_fdemands_def]
+      \\ rw []
+      \\ rename1 ‘d ∈ find_fdemands fd e’
+      \\ last_assum $ qspecl_then [‘e’] assume_tac
+      \\ fs []
+      \\ pop_assum drule
+      \\ strip_tac
+      \\ pop_assum drule
+      \\ strip_tac
+      \\ fs [demands_If]
+      \\ rename1 ‘If ec et ee’
+      \\ last_x_assum $ qspecl_then [‘et’] assume_tac
+      \\ fs []
+      \\ pop_assum dxrule
+      \\ strip_tac
+      \\ pop_assum dxrule
+      \\ strip_tac
+      \\ fs [demands_If2])
+  \\ rw []
+  \\ rename1 ‘d ∈ find_fdemands fd e’
+  \\ last_x_assum $ qspecl_then [‘e’] assume_tac
+  \\ fs []
+  \\ pop_assum dxrule
+  \\ strip_tac
+  \\ pop_assum dxrule
+  \\ strip_tac
+  \\ fs [demands_Seq, demands_Seq2]
+QED
+
+(*
+Theorem Lam_fdemands:
+  ∀e ps v. e demands (ps, v) ⇒ Lam v e fdemands ((ps, 0), 1)
+Proof
+  rw [fdemands_def]
+  \\ rename1 ‘MAP Var l2’
+  \\ Cases_on ‘l2’
+  \\ fs [Apps_def, demands_Let3]
+QED
+
+Theorem Lam_fdemands2:
+  ∀k e ps i v. e fdemands ((ps, i), k) ⇒ Lam v e fdemands ((ps, SUC i), SUC k)
+Proof
+  Induct
+  \\ fs [fdemands_def]
+  \\ rw []
+  \\ rename1 ‘MAP Var l’
+  \\ Cases_on ‘l’ \\ fs [Apps_def]
+  \\ first_x_assum irule
+QED
+*)
+
+Theorem Lam_require:
+  ∀l l' i h.
+    LENGTH l = LENGTH l' ∧ ¬MEM h l ⇒
+    Apps (Lams l (Var h)) l' demands ([], h)
+Proof
+  Induct
+  \\ fs [Apps_def, Lams_def, demands_Var]
+  \\ gen_tac
+  \\ Cases
+  \\ rw [Apps_def]
+  \\ irule exp_eq_same_demands
+  \\ first_x_assum $ irule_at Any
+  \\ last_x_assum $ irule_at Any
+  \\ fs []
+  \\ irule exp_eq_Apps_cong
+  \\ fs [exp_eq_l_refl]
+  \\ irule eval_wh_IMP_exp_eq
+  \\ rw [subst_def, eval_wh_thm]
+  \\ AP_TERM_TAC
+  \\ ‘∀v. v ∈ FRANGE f ⇒ closed v’ by
+    (rw []
+     \\ first_x_assum irule
+     \\ fs [FRANGE_FLOOKUP]
+     \\ first_x_assum $ irule_at Any)
+  \\ ‘closed (subst f h')’ by gvs [freevars_subst, closed_def, SUBSET_DIFF_EMPTY]
+  \\ fs [bind1_def, subst_Lams, subst1_def, subst_def, FLOOKUP_FDIFF,
+         DOMSUB_FLOOKUP_NEQ, FLOOKUP_DEF]
+QED
+
+Theorem subst1_Lams:
+  ∀l h e e'. ¬ MEM h l ⇒ subst1 h e (Lams l e') = Lams l (subst1 h e e')
+Proof
+  Induct
+  \\ fs [Lams_def]
+  \\ rw [bind1_def, subst1_def]
+QED
+
+Theorem Lams_require_arg:
+  ∀l i.
+    ALL_DISTINCT l ∧ i < LENGTH l ⇒
+    Lams l (Var (EL i l)) fdemands (([], i), LENGTH l)
+Proof
+  Induct
+  \\ fs [Lams_def, fdemands_def]
+  \\ rpt gen_tac
+  \\ strip_tac
+  \\ Cases
+  \\ fs []
+  \\ rename1 ‘EL i (h::l)’
+  \\ Cases_on ‘i’
+  \\ fs [Apps_def]
+  >- (strip_tac
+      \\ irule exp_eq_same_demands
+      \\ irule_at Any demands_Let1
+      \\ irule_at (Pos hd) demands_Var
+      \\ irule_at Any Lam_require
+      \\ rename1 ‘MAP Var t’
+      \\ qspecl_then [‘l++t’] assume_tac exists_str_not_in_list
+      \\ fs [MEM_APPEND]
+      \\ qexists_tac ‘l’
+      \\ qexists_tac ‘MAP Var t’
+      \\ rename1 ‘MEM s t’
+      \\ first_assum $ irule_at Any
+      \\ fs [LENGTH_MAP, Once exp_eq_sym]
+      \\ irule exp_eq_trans
+      \\ irule_at (Pos last) Apps_Let
+      \\ conj_tac
+      >- (rw [EVERY_EL, EL_MAP]
+          \\ strip_tac
+          \\ gvs [MEM_EL])
+      \\ irule exp_eq_Apps_cong
+      \\ fs [exp_eq_l_refl]
+      \\ irule eval_wh_IMP_exp_eq
+      \\ rw [subst_def, subst_Lams, eval_wh_thm, FLOOKUP_DEF]
+      \\ AP_TERM_TAC
+      \\ simp [bind1_def]
+      \\ rw [subst1_Lams, subst1_def])
+  \\ strip_tac
+  \\ irule exp_eq_same_demands
+  \\ first_x_assum $ irule_at Any
+  \\ fs []
+  \\ irule exp_eq_Apps_cong
+  \\ fs [exp_eq_l_refl]
+  \\ irule eval_wh_IMP_exp_eq
+  \\ rw []
+  \\ fs [MEM_EL, subst_def, eval_wh_thm, FLOOKUP_DEF, bind1_def]
+  \\ ‘closed (Lams l (Var (EL n' l)))’ by fs [closed_Lams, EL_MEM]
+  \\ fs [closed_subst]
+QED
+
+Theorem last_exists:
+  ∀l. LENGTH l > 0 ⇒ ∃x t. l = t ++ [x]
+Proof
+  Induct
+  \\ fs []
+  \\ rw []
+  \\ rename1 ‘hd::tl’
+  \\ Cases_on ‘tl’
+  \\ fs []
+QED
+
+Theorem exists_diff_list_commute:
+  ∀(l : string list) s. FINITE s ⇒ ∃l'. LENGTH l = LENGTH l' ∧ ALL_DISTINCT l' ∧ EVERY (λv. v ∉ s ∧ ¬ MEM v l) l'
+Proof
+  Induct
+  \\ fs []
+  \\ rw []
+  \\ first_x_assum $ qspecl_then [‘s ∪ {h}’] assume_tac
+  \\ fs [FINITE_UNION, FINITE_SING]
+  \\ pop_assum drule
+  \\ rw []
+  \\ ‘INFINITE 𝕌(:string)’ by simp []
+  \\ ‘∃x. x ∉ set l' ∪ set l ∪ s ∪ {h}’ by
+    fs[pred_setTheory.NOT_IN_FINITE, FINITE_UNION, FINITE_SING]
+  \\ qexists_tac ‘x::l'’
+  \\ fs [EVERY_EL]
+QED
+
+Theorem Lams_equiv:
+  ∀ l l' e b. ALL_DISTINCT l ∧ ALL_DISTINCT l' ∧ LENGTH l = LENGTH l' ⇒
+            (Lams l e ≅? Lams l' (subst (FEMPTY |++ REVERSE (ZIP (l', MAP Var l))) e)) b
+Proof
+  Induct
+  \\ fs [Lams_def]
+  >- fs [FUPDATE_LIST, exp_eq_refl]
+  \\ gen_tac
+  \\ Cases
+  \\ fs [Lams_def]
+  \\ rw []
+
+QED
+
+Theorem Apps_Lams_Seq:
+  ∀l l' e1 e2 b. LENGTH l = LENGTH l' ⇒
+           (Apps (Lams l (Seq e1 e2)) l' ≅? Seq (Apps (Lams l e1) l') (Apps (Lams l e2) l')) b
+Proof
+  Induct
+  \\ fs [Apps_def, Lams_def, exp_eq_refl]
+  \\ gen_tac
+  \\ Cases
+  \\ fs [Apps_def]
+  \\ rw []
+  \\ cheat
+
+
+(*  gen_tac
+  \\ completeInduct_on ‘LENGTH l’
+  \\ rename1 ‘v = _’
+  \\ Cases_on ‘v’
+  \\ fs [Apps_def, Lams_def, exp_eq_refl]
+  \\ gen_tac
+  \\ strip_tac
+  \\ ‘LENGTH l > 0’ by fs []
+  \\ drule last_exists
+  \\ rw []
+  \\ rename1 ‘Apps _ l2’
+  \\ ‘LENGTH l2 > 0’ by fs []
+  \\ drule last_exists
+  \\ rw [last_Lams]
+  \\ rw [last_Apps]
+  \\ *)
+
+QED
+
+Theorem find_fdemands_soundness:
+  ∀e m. m = find_fdemands {} e ⇒
+        (∀l i ps. ALL_DISTINCT l ∧ i < LENGTH l ⇒ (ps, EL i l) ∈ m ⇒ (Lams l e) fdemands ((ps, i), LENGTH l))
+Proof
+  Induct using freevars_ind
+  \\ fs [find_fdemands_def]
+  \\ fs [Lams_require_arg]
+  \\ rename1 ‘Prim op es’
+  \\ Cases_on ‘op’
+  \\ Cases_on ‘es’
+  \\ fs [find_fdemands_def]
+  \\ rename1 ‘e1::tl’
+  \\ Cases_on ‘tl’
+  \\ fs [find_fdemands_def]
+  \\ rename1 ‘e1::e2::tl’
+  \\ Cases_on ‘tl’
+  \\ fs [find_fdemands_def]
+  >~[‘Seq e1 e2’]
+  >- (rw [fdemands_def]
+         )
+QED
+
+Theorem subst_Apps:
+  ∀l f e. subst f (Apps e l) = Apps (subst f e) (MAP (subst f) l)
+Proof
+    Induct
+    \\ fs [Apps_def, subst_def]
+QED
+(*
 
 Theorem Letrec_not_user_first:
   ∀l2 l1 m h e2 n. MEM m l1 ⇒
@@ -850,37 +1542,7 @@ Proof
       \\ fs []
       \\ rw [subst_def, subst_Apps]
       \\ cheat)
-QED
-
-Theorem exp_eq_Apps_cong:
-  ∀l l' b e e'. LIST_REL (λx y. (x ≅? y) b) l l' ⇒ (e ≅? e') b ⇒ (Apps e l ≅? Apps e' l') b
-Proof
-  Induct
-  \\ fs [Apps_def]
-  \\ rw [Apps_def]
-  \\ fs [Apps_def]
-  \\ first_x_assum $ irule
-  \\ fs [exp_eq_App_cong]
-QED
-
-Theorem exp_eq_Lams_cong:
-  ∀l e e' b. (e ≅? e') b ⇒ (Lams l e ≅? Lams l e') b
-Proof
-  Induct
-  \\ rw [Lams_def]
-  \\ fs [exp_eq_Lam_cong]
-QED
-
-Theorem Apps_demands:
-  ∀el d e. e demands d ⇒ Apps e el demands d
-Proof
-  Induct
-  \\ fs [Apps_def]
-  \\ gen_tac
-  \\ rw []
-  \\ first_x_assum irule
-  \\ fs [demands_App]
-QED
+QED*)
 
 Datatype:
   ctxt = Nil
