@@ -8,13 +8,27 @@ open arithmeticTheory listTheory stringTheory alistTheory dep_rewrite
      BasicProvers pred_setTheory relationTheory rich_listTheory finite_mapTheory;
 open pure_expTheory pure_valueTheory pure_evalTheory pure_eval_lemmasTheory
      pure_exp_lemmasTheory pure_miscTheory pure_exp_relTheory pure_congruenceTheory;
-      
+
 val _ = new_theory "pure_demand";
 
 Definition Projs_def:
   Projs [] e = e ∧
   Projs ((x,i)::ps) e = Projs ps (Proj x i e)
 End
+
+Definition is_bot_def:
+  is_bot e = (e = wh_Diverge ∨ e = wh_Error)
+End
+
+Theorem is_bot_continuous:
+  ∀e k k2. k2 ≤ k ∧ is_bot (eval_wh_to k e) ⇒ is_bot (eval_wh_to k2 e)
+Proof
+  rw [is_bot_def]
+  \\ Cases_on ‘eval_wh_to k2 e = wh_Diverge’
+  \\ fs []
+  \\ qspecl_then [‘k’, ‘e’, ‘k2’] assume_tac eval_wh_inc
+  \\ gvs []
+QED
 
 Theorem demands_proj_end:
   ∀ ps x i e. Projs (ps++[(x,i)]) e = Proj x i (Projs ps e)
@@ -196,6 +210,16 @@ val _ = set_fixity "needs" (Infixl 480);
 Definition needs_def:
   (e needs (ps, e')) = (e ≈ Seq (Projs ps e') e)
 End
+
+Theorem is_bot_IMP_IMP_needs:
+  ∀e ps e'. (∀f. is_bot (eval_wh (subst f (Projs ps e'))) ⇒ is_bot (eval_wh (subst f e))) ⇒ e needs (ps, e')
+Proof
+  rw [needs_def]
+  \\ irule no_err_eval_wh_IMP_exp_eq
+  \\ rw [no_err_eval_wh_def, subst_def, eval_wh_thm]
+  \\ first_x_assum $ qspecl_then [‘f’] assume_tac
+  \\ gvs [is_bot_def]
+QED
 
 Theorem needs_Var_is_demands:
   e needs (ps, Var v) ⇔ e demands (ps, v)
@@ -811,7 +835,15 @@ QED
 val _ = set_fixity "fdemands" (Infixl 480);
 
 Definition fdemands_def:
-  f fdemands ((ps, i), k) = (i < k ∧ ∃s. FINITE s ∧ ∀l. (set l ∩ s = {} ∧ LENGTH l = k) ⇒ (Apps f (MAP Var l)) demands (ps, EL i l))
+  f fdemands ((ps, i), len) = (i < len ∧ ∃s. FINITE s ∧ ∀l. (set l ∩ s = {} ∧ LENGTH l = len) ⇒ (Apps f (MAP Var l)) demands (ps, EL i l))
+End
+
+val _ = set_fixity "fdemands_depth" (Infixl 480);
+
+Definition fdemands_depth_def:
+  fexp fdemands_depth ((ps, i), len, k) = (i < len ∧ ∃s. FINITE s ∧ ∀l. (set l ∩ s = {} ∧ LENGTH l = len)
+       ⇒ ∀f. freevars (Apps fexp (MAP Var l)) ⊆ FDOM f ∧ is_bot (eval_wh_to k (subst f (Var (EL i l))))
+             ⇒  is_bot (eval_wh_to k (subst f (Apps fexp (MAP Var l)))))
 End
 
 Theorem exists_str_not_in_list:
@@ -836,146 +868,6 @@ Proof
   \\ qexists_tac ‘hd::l’
   \\ gvs []
 QED
-(*
-Theorem freevars_closed_subset:
-  ∀e f. (∀n v. FLOOKUP f n = SOME v ⇒ closed v) ⇒ freevars (subst f e) ⊆ (freevars e) DIFF (FDOM f)
-Proof
-  Induct using freevars_ind
-  \\ rw [closed_def]
-  >- (gvs [FLOOKUP_DEF, subst_def]
-      \\ first_x_assum irule
-      \\ first_x_assum $ irule_at Any
-      \\ fs [EL_MEM, MEM_MAP]
-      \\ rename1 ‘EL n es’
-      \\ qexists_tac ‘EL n es’
-      \\ fs [EL_MEM])
-  >- rw [subst_def, FLOOKUP_DEF]
-  >- (rw [subst_def, SUBSET_DEF, MEM_EL, MAP_MAP_o]
-      \\ rename1 ‘n < LENGTH es’
-      \\ last_x_assum $ qspecl_then [‘EL n es’] assume_tac
-      \\ gvs [EL_MAP, EL_MEM, closed_def]
-      \\ pop_assum $ qspecl_then [‘f’] assume_tac
-      \\ pop_assum drule
-      \\ strip_tac
-      \\ gvs [SUBSET_DEF]
-      \\ qexists_tac ‘freevars (EL n es)’
-      \\ first_assum $ irule_at Any
-      \\ gvs [EL_MAP])
-  >- (fs [closed_def]
-      \\ first_x_assum $ qspecl_then [‘f’] assume_tac
-      \\ pop_assum drule
-      \\ first_x_assum $ qspecl_then [‘f’] assume_tac
-      \\ pop_assum drule
-      \\ rw [subst_def, SUBSET_DEF, IN_DIFF]
-      \\ first_x_assum dxrule
-      \\ rw [])
-  >- (first_x_assum $ qspecl_then [‘f \\ n’] assume_tac
-      \\ fs [closed_def]
-      \\ ‘∀n' v. FLOOKUP (f \\ n) n' = SOME v ⇒ freevars v = {}’
-        by (rw [] \\ Cases_on ‘n = n'’
-            \\ first_x_assum irule
-            \\ gvs [DOMSUB_FLOOKUP_NEQ]
-            \\ first_x_assum $ irule_at Any)
-      \\ first_x_assum dxrule
-      \\ rw [subst_def, closed_def, SUBSET_DEF, IN_DIFF, DELETE_DEF]
-      \\ first_x_assum dxrule
-      \\ rw [])
-  \\ gvs [SUBSET_DEF, IN_DIFF, closed_def, subst_def]
-  \\ first_x_assum $ qspecl_then [‘FDIFF f (set (MAP FST lcs))’] assume_tac
-  \\ ‘∀n v. FLOOKUP (FDIFF f (set (MAP FST lcs))) n = SOME v ⇒ freevars v = {}’
-    by (rw []
-        \\ first_x_assum irule
-        \\ gvs [FLOOKUP_DEF, FDOM_FDIFF, DRESTRICT_DEF, FDIFF_def]
-        \\ first_x_assum $ irule_at Any
-        \\ fs [])
-  \\ first_x_assum drule
-  \\ rw [] \\ gvs []
-  >- (first_x_assum dxrule
-      \\ rw [MEM_EL]
-      \\ strip_tac
-      \\ last_x_assum irule
-      \\ gvs [EL_MAP, MEM_MAP]
-      \\ rename1 ‘EL n lcs’
-      \\ qabbrev_tac ‘p = EL n lcs’
-      \\ PairCases_on ‘p’
-      \\ qexists_tac ‘(p0, subst (FDIFF f (set (MAP FST lcs))) p1)’
-      \\ fs []
-      \\ qexists_tac ‘(p0, p1)’
-      \\ fs [MEM_EL]
-      \\ last_x_assum $ irule_at Any
-      \\ fs [])
-  >- (first_x_assum dxrule
-      \\ rw [MEM_EL]
-      \\ rename1 ‘EL n _’
-      \\ strip_tac
-      \\ first_x_assum irule
-      \\ gvs [EL_MAP, MEM_MAP]
-      \\ ‘MEM (EL n lcs) lcs’ by gvs [EL_MEM]
-      \\ pop_assum $ irule_at Any
-      \\ qabbrev_tac ‘p = EL n lcs’
-      \\ PairCases_on ‘p’
-      \\ fs [])
-  >- (DISJ2_TAC
-      \\ dxrule $ iffLR MEM_EL
-      \\ rw []
-      \\ rename1 ‘n < LENGTH lcs’
-      \\ last_x_assum $ qspecl_then [‘FST (EL n lcs)’, ‘SND (EL n lcs)’] assume_tac
-      \\ gvs [EL_MEM, EL_MAP]
-      \\ pop_assum dxrule
-      \\ rw []
-      \\ qabbrev_tac ‘p = EL n lcs’
-      \\ PairCases_on ‘p’
-      \\ gvs []
-      \\ first_x_assum dxrule
-      \\ rw []
-      \\ pop_assum kall_tac
-      \\ pop_assum $ irule_at Any
-      \\ gvs [MEM_EL]
-      \\ first_assum $ irule_at Any
-      \\ fs [EL_MAP])
-  >- (rw [MEM_EL]
-      \\ strip_tac
-      \\ first_x_assum irule
-      \\ gvs [MEM_EL, EL_MAP]
-      \\ first_assum $ irule_at Any
-      \\ gvs [EL_MAP]
-      \\ rename1 ‘FST p’
-      \\ PairCases_on ‘p’
-      \\ fs [])
-  >- (dxrule $ iffLR MEM_EL
-      \\ rw []
-      \\ rename1 ‘n < LENGTH lcs’
-      \\ last_x_assum $ qspecl_then [‘FST (EL n lcs)’, ‘SND (EL n lcs)’] assume_tac
-      \\ gvs [EL_MEM, EL_MAP]
-      \\ pop_assum dxrule
-      \\ rw []
-      \\ qabbrev_tac ‘p = EL n lcs’
-      \\ PairCases_on ‘p’
-      \\ gvs []
-      \\ first_x_assum dxrule
-      \\ rw []
-      \\ strip_tac
-      \\ first_x_assum irule
-      \\ gvs [MEM_EL, EL_MAP]
-      \\ first_assum $ irule_at Any
-      \\ gvs [EL_MAP]
-      \\ rename1 ‘FST p’
-      \\ PairCases_on ‘p’
-      \\ fs [])
-QED
-
-Theorem freevars_closed_closed:
-  ∀e f. (∀n v. FLOOKUP f n = SOME v ⇒ closed v) ∧ freevars e ⊆ FDOM f ⇒ closed (subst f e)
-Proof
-  rw []
-  \\ dxrule freevars_closed_subset
-  \\ rw [closed_def]
-  \\ irule $ iffLR SUBSET_EMPTY
-  \\ irule SUBSET_TRANS
-  \\ pop_assum $ irule_at Any
-  \\ gvs [SUBSET_DIFF_EMPTY, SUBSET_EMPTY]
-QED
-*)
 
 Theorem DRESTRICT_DOMSUB_COMM:
   ∀f v s. DRESTRICT (f \\ v) s = (DRESTRICT f s) \\ v
@@ -1132,7 +1024,7 @@ Proof
   \\ irule_at Any exp_eq_refl
   \\ fs [Let_Seq]
 QED
-                
+
 Theorem Apps_Lams_Seq_strong:
   ∀l eL e p b. EVERY (λx. EVERY (λe. x ∉ freevars e) eL) l ∧ LENGTH l = LENGTH eL ⇒
                      (Apps (Lams l (Seq p e)) eL ≅? Seq (Apps (Lams l p) eL) (Apps (Lams l e) eL)) b
@@ -1230,7 +1122,7 @@ Proof
   \\ first_assum $ irule_at Any
   \\ fs [EL_MAP]
 QED
-        
+
 Theorem fdemands_every_thing:
   f fdemands ((ps, i), k) ⇔ (i < k ∧ ∀el. LENGTH el = k ⇒ (Apps f el) needs (ps, EL i el))
 Proof
@@ -1326,6 +1218,82 @@ Definition find_fdemands_def:
                               (find_fdemands fd e2 ∩ find_fdemands fd e3) ∧
   find_fdemands fd e = {}
 End
+
+Theorem find_fdemands_with_eval_to_soundness:
+  ∀e k fd. (∀n p len k2. (n, p, len) ∈ fd ∧ k2 ≤ k ⇒ (Var n) fdemands_depth (p, len, k2))
+           ⇒ ∀ps v. (ps, v) ∈ find_fdemands fd e
+                    ⇒ ∀f. freevars e ⊆ FDOM f ∧ is_bot (eval_wh_to k (subst f (Projs ps (Var v))))
+                          ⇒ is_bot (eval_wh_to k (subst f e))
+Proof
+  Induct using freevars_ind
+  \\ fs [find_fdemands_def, Projs_def]
+  \\ rename1 ‘Prim op es’
+  \\ Cases_on ‘op’
+  \\ Cases_on ‘es’
+  \\ fs [find_fdemands_def]
+  \\ rename1 ‘e1::tl’
+  \\ Cases_on ‘tl’
+  \\ fs [find_fdemands_def]
+  \\ rename1 ‘e1::e2::tl’
+  \\ Cases_on ‘tl’
+  \\ fs [find_fdemands_def]
+  >~ [‘Prim If (e1::e2::e3::t)’]
+  >- (Cases_on ‘t’
+      \\ fs [find_fdemands_def]
+      \\ rw []
+      \\ rename1 ‘(ps, v) ∈ find_fdemands fd e’
+      \\ last_assum $ qspecl_then [‘e’] assume_tac
+      \\ gvs []
+      \\ ‘∀n p len k2. (n, p, len) ∈ fd ∧ k2 ≤ (k - 1) ⇒ Var n fdemands_depth (p, len, k2)’
+        by (rw []
+            \\ first_x_assum irule
+            \\ gvs [])
+      \\ first_x_assum drule
+      \\ strip_tac
+      \\ pop_assum drule
+      \\ strip_tac
+      \\ pop_assum drule
+      \\ strip_tac
+      \\ ‘k - 1 ≤ k’ by fs []
+      \\ drule is_bot_continuous
+      \\ strip_tac
+      \\ pop_assum dxrule
+      \\ strip_tac
+      \\ fs [eval_wh_to_def, is_bot_def, subst_def]
+      \\ IF_CASES_TAC
+      \\ gvs []
+      \\ rename1 ‘_ = ec ∨ _ = et ∨ _ = ee’
+      \\ CASE_TAC \\ fs [] \\ rpt (IF_CASES_TAC \\ fs [])
+      \\ first_x_assum irule
+      \\ gvs []
+      \\ first_x_assum $ irule_at Any
+      \\ rw []
+      \\ first_x_assum $ irule_at Any
+      \\ gvs [])
+  \\ rw []
+  \\ rename1 ‘(ps, v) ∈ find_fdemands fd e’
+  \\ last_x_assum $ qspecl_then [‘e’] assume_tac
+  \\ fs []
+  \\ ‘∀n p len k2. (n, p, len) ∈ fd ∧ k2 ≤ (k - 1) ⇒ Var n fdemands_depth (p, len, k2)’
+        by (rw []
+            \\ first_x_assum irule
+            \\ gvs [])
+  \\ first_x_assum dxrule
+  \\ strip_tac
+  \\ pop_assum dxrule
+  \\ strip_tac
+  \\ pop_assum dxrule
+  \\ strip_tac
+  \\ ‘k - 1 ≤ k’ by fs []
+  \\ dxrule_then assume_tac is_bot_continuous
+  \\ pop_assum $ dxrule_then assume_tac
+  \\ gvs [eval_wh_to_def, is_bot_def, subst_def]
+  \\ Cases_on ‘k’
+  \\ fs []
+  \\ rename1 ‘if p = wh_Diverge ∨ p = wh_Error then _ else _’
+  \\ Cases_on ‘p’
+  \\ fs []
+QED
 
 Theorem find_fdemands_soundness:
   ∀e fd. (∀n p k. (n, p, k) ∈ fd ⇒ (Var n) fdemands (p, k)) ⇒ ∀d. d ∈ find_fdemands fd e ⇒ e demands d
@@ -1429,7 +1397,7 @@ Proof
   \\ metis_tac []
 QED
 
-Theorem find_fdemands_soundness2:
+Theorem find_fdemands_Lambda_soundness:
   ∀e l fname. ALL_DISTINCT l ∧ i < LENGTH l ∧ (ps, EL i l) ∈ find_fdemands {} e
                  ⇒ (Lams l e) fdemands ((ps, i), LENGTH l)
 Proof
@@ -1441,7 +1409,33 @@ Proof
   \\ gvs []
 QED
 
-Theorem find_fdemands_soundness3:
+Theorem is_bot_eval_wh_to_Apps:
+  ∀eL k f. is_bot (eval_wh_to k f) ⇒ is_bot (eval_wh_to k (Apps f eL))
+Proof
+  Induct
+  \\ rw []
+  \\ fs [Apps_def, eval_wh_to_def, is_bot_def]
+QED
+
+(*
+Theorem find_fdemands_Letrec:
+  ∀k e fd fname vL.ALL_DISTINCT vL ∧
+                   (∀n ps i l. (n, (ps, i), l) ∈ fd ⇒ l = LENGTH vL ∧ n = fname ∧ (ps, EL i vL) ∈ find_fdemands fd e)
+                 ⇒ ∀ps i. (ps, EL i vL) ∈ find_fdemands fd e
+                          ⇒ ∀f eL. is_bot (eval_wh_to k (subst f (Projs ps (EL i eL)))) ∧ LENGTH eL = LENGTH vL
+                                     ⇒ is_bot (eval_wh_to k (subst f (
+                                                              Apps
+                                                                (Letrec [(fname, Lams vL e)] (Var fname))
+                                                                eL)))
+Proof
+  Induct
+  >- (rw [subst_Apps, subst_def, subst_Lams, FLOOKUP_FDIFF]
+      \\ irule is_bot_eval_wh_to_Apps
+      \\ rw [eval_wh_to_def, is_bot_def])
+  \\
+*)
+
+Theorem find_fdemands_Letrec_soundness:
   ∀e fd l fname. ALL_DISTINCT l
               ∧ (∀n ps i k. (n, (ps, i), k) ∈ fd ∧ n = fname ⇒ k = LENGTH l ∧ (ps, EL i l) ∈ find_fdemands fd e)
                  ⇒ ∀p k. (fname, p, k) ∈ fd ⇒ (Letrec [(fname, Lams l e)] (Var fname)) fdemands (p, k)
@@ -1644,7 +1638,7 @@ Proof
   \\ *)
 
 QED
-        
+
 Theorem find_fdemands_soundness:
   ∀e m. m = find_fdemands {} e ⇒
         (∀l i ps. ALL_DISTINCT l ∧ i < LENGTH l ⇒ (ps, EL i l) ∈ m ⇒ (Lams l e) fdemands ((ps, i), LENGTH l))
@@ -1761,17 +1755,25 @@ QED*)
 Datatype:
   ctxt = Nil
        | IsFree string ctxt
-       | Bind string exp ctxt ctxt
+       | Bind string exp ctxt
        | RecBind ((string # exp) list) ctxt
+End
+
+Definition apply_ctxt_def:
+  apply_ctxt Nil e = e ∧
+  apply_ctxt (IsFree s c) e = apply_ctxt c (Lam s e) ∧
+  apply_ctxt (Bind s e1 c) e2 = apply_ctxt c (Let s e1 e2) ∧
+  apply_ctxt (RecBind l c) e = apply_ctxt c (Letrec l e)
 End
 
 Definition ctxt_size_def:
   ctxt_size Nil = 0n ∧
   ctxt_size (IsFree s ctxt) = 1 + ctxt_size ctxt ∧
-  ctxt_size (Bind s e ctxt tl) = 1 + list_size char_size s +  exp_size e + ctxt_size ctxt + ctxt_size tl ∧
+  ctxt_size (Bind s e ctxt) = 1 + list_size char_size s +  exp_size e + ctxt_size ctxt ∧
   ctxt_size (RecBind sel ctxt) = 1 + exp1_size sel + ctxt_size ctxt
 End
 
+(*
 Definition subst_ctxt_def:
   (subst_ctxt ctxt (App f e) = App (subst_ctxt ctxt f) (subst_ctxt ctxt e)) ∧
   (subst_ctxt  ctxt (Prim op l) = Prim op (MAP (subst_ctxt ctxt) l)) ∧
@@ -1790,7 +1792,7 @@ Definition subst_ctxt_def:
 Termination
   WF_REL_TAC ‘inv_image ($< LEX $<) (λ(c,e).(exp_size e + ctxt_size c, exp_size e))’
   \\ rw [ctxt_size_def] \\ fs []
-End
+End*)
 
 Inductive find: (* i i o o *)
 [find_Bottom:]
@@ -1849,12 +1851,12 @@ Inductive find: (* i i o o *)
      find e c ds e' ∧ (∀ps v. (ps, v) ∈ ds' ⇒ ∃ps'. (ps++ps', v) ∈ ds) ⇒ find e c ds' e') ∧
 [find_Let:]
   (∀e e' e2 e2' ds ds' c v.
-     find e c ds e' ∧ find e2 (Bind v e c c) ds' e2'
+     find e c ds e' ∧ find e2 (Bind v e c) ds' e2'
      ∧ (∀ps. (ps, v) ∉ ds')
      ⇒ find (Let v e e2) c ds' (Let v e' e2')) ∧
 [find_Let2:]
   (∀ e e' e2 e2' ds ds' ds'' c v ps.
-     find e c ds e' ∧ find e2 (Bind v e c c) ds' e2'
+     find e c ds e' ∧ find e2 (Bind v e c) ds' e2'
      ∧ (ps,v) ∈ ds'
      ∧ (∀ps' v'. (ps', v') ∈ ds'' ⇒ ((ps', v') ∈ ds' ∧ v' ≠ v) ∨ (ps', v') ∈ ds)
      ⇒ find (Let v e e2) c ds'' (Let v e' e2')) ∧
@@ -1870,20 +1872,53 @@ Inductive find: (* i i o o *)
   (∀e e' ds c b b'. LIST_REL (λ(n1, e1) (n2, e2). n1 = n2 ∧ e1 ≈ e2) b b' ∧ find e (RecBind b c) ds e' ⇒ find (Letrec b e) c {} (Letrec b e'))
 End
 
+Theorem exp_eq_apply_ctxt_cong:
+  ∀c e e'. e ≈ e' ⇒ apply_ctxt c e ≈ apply_ctxt c e'
+Proof
+  Induct
+  \\ gvs [apply_ctxt_def]
+  \\ rw []
+  \\ last_x_assum $ irule
+  \\ gvs [exp_eq_Lam_cong, exp_eq_App_cong, exp_eq_Letrec_cong, exp_eq_refl, exp_eq_l_refl]
+QED
+
+Theorem exp_eq_apply_ctxt_push:
+  ∀c e1 e2 e3 e4. (e1 ≈ e2 ⇒ e3 ≈ e4) ∧ apply_ctxt c e1 ≈ apply_ctxt c e2 ⇒ apply_ctxt c e3 ≈ apply_ctxt c e4
+Proof
+  Induct
+  \\ gvs [apply_ctxt_def]
+  \\ rw []
+  \\ last_x_assum $ irule
+  \\ pop_assum $ irule_at Any
+  \\ strip_tac
+  >- (irule exp_eq_Lam_cong \\ first_x_assum irule
+      \\ gvs [exp_eq_open_bisimilarity_freevars, open_bisimilarity_eq, open_similarity_def, app_similarity_iff]
+      \\ rw [bind_def] \\ fs [] >>~[‘(Fail, Fail)’]
+      >- rw [unfold_rel_def, eval_wh_Fail]
+      >- rw [unfold_rel_def, eval_wh_Fail]
+      \\ ‘∀v. v ∈ FRANGE f ⇒ closed v’ by (rw [] \\ first_x_assum irule
+                                           \\ fs [FRANGE_FLOOKUP] \\ first_x_assum $ irule_at Any)
+      \\ dxrule_then assume_tac IMP_closed_subst
+      \\ first_assum dxrule
+      \\ first_x_assum dxrule
+      \\ rw [unfold_rel_def]
+      \\ cheat)
+  \\ cheat
+QED
 
 fun apply_to_first_n 0 tac = ALL_TAC
   | apply_to_first_n n tac = apply_to_first_n (n-1) tac >- tac;
 
 Theorem find_soundness_lemma:
   ∀e c ds e'. find e c ds e'  ⇒
-                e ≈ e' ∧
+                apply_ctxt c e ≈ apply_ctxt c e' ∧
                 (∀d. d ∈ ds ⇒ e demands d)
 Proof
   Induct_on ‘find’
   \\ rpt conj_tac
   \\ rpt gen_tac
   >- fs [exp_eq_refl] (* find_Bottom *)
-  >~[‘e ≈ Seq (Var v) e2’] (* find_Seq *)
+  >~[‘apply_ctxt c e ≈ apply_ctxt c (Seq (Var v) e2)’] (* find_Seq *)
   >- (strip_tac
       \\ strip_tac
       \\ fs []
@@ -1891,21 +1926,22 @@ Proof
       \\ rw []
       \\ dxrule_then assume_tac demands_empty_proj
       \\ fs [demands_def, Projs_def]
+      \\ irule exp_eq_apply_ctxt_cong
       \\ irule exp_eq_trans
       \\ first_assum $ irule_at Any
       \\ irule exp_eq_Prim_cong
       \\ fs [exp_eq_refl])
-  >~[‘Seq e e2 ≈ Seq e' e2'’] (* find_Seq2 *)
+  >~[‘apply_ctxt c (Seq e e2) ≈ apply_ctxt c (Seq e' e2')’] (* find_Seq2 *)
   >- (rw []
-      \\ fs [exp_eq_Prim_cong, demands_Seq, demands_Seq2])
-  >~[‘If ec et ee ≈ If ec' et' ee'’]
+      \\ fs [exp_eq_apply_ctxt_cong, exp_eq_Prim_cong, demands_Seq, demands_Seq2])
+  >~[‘apply_ctxt c (If ec et ee) ≈ apply_ctxt c (If ec' et' ee')’]
   >- (rw []
-      \\ fs [demands_If, demands_If2, exp_eq_Prim_cong])
+      \\ fs [exp_eq_apply_ctxt_cong, demands_If, demands_If2, exp_eq_Prim_cong])
   >~[‘Var n ≈ Var n’] (* find_Var *)
-  >- fs [exp_eq_refl, demands_Var]
+  >- fs [exp_eq_apply_ctxt_cong, exp_eq_refl, demands_Var]
   >~[‘App f e ≈ App f' e'’] (* find_App *)
   >- (rw []
-      \\ fs [exp_eq_App_cong, demands_App])
+      \\ fs [exp_eq_apply_ctxt_cong, exp_eq_App_cong, demands_App])
   >~[‘Apps e el' ≈ Apps e' el''’]
   >- (rw []
       \\ fs [Apps_demands]
