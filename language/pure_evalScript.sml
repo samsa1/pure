@@ -1038,6 +1038,16 @@ Proof
   \\ rw [] \\ fs []
 QED
 
+Theorem eval_Seq:
+  eval (Seq x y) = if eval x = Diverge then Diverge
+                   else if eval x = Error then Error
+                   else eval y
+Proof
+  simp [eval_def]
+  \\ once_rewrite_tac [v_unfold]
+  \\ Cases_on ‘eval_wh x’ \\ fs [eval_wh_Seq]
+QED
+
 Theorem eval_thm:
   eval Fail = Error ∧
   eval Bottom = Diverge ∧
@@ -1049,7 +1059,10 @@ Theorem eval_thm:
   eval (If x y z) =
     (if eval x = Diverge then Diverge  else
      if eval x = True    then eval y else
-     if eval x = False   then eval z else Error) ∧
+       if eval x = False   then eval z else Error) ∧
+  eval (Seq x y) =
+    (if eval x = Diverge then Diverge else
+     if eval x = Error then Error else eval y) ∧
   eval (Lam s x) = Closure s x ∧
   eval (Letrec f x) = eval (subst_funs f x) ∧
   eval (App x y) =
@@ -1060,7 +1073,7 @@ Theorem eval_thm:
          | SOME (s,body) => eval (bind1 s y body))
 Proof
   fs [eval_App,eval_Fail,eval_Bottom,eval_Var,eval_Cons,eval_Lam,eval_Letrec,
-      eval_If,eval_Proj,eval_IsEq]
+      eval_If,eval_Proj,eval_IsEq, eval_Seq]
 QED
 
 val _ = export_theory();
