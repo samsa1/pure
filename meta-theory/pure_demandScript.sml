@@ -8,6 +8,7 @@ open arithmeticTheory listTheory stringTheory alistTheory dep_rewrite
      BasicProvers pred_setTheory relationTheory rich_listTheory finite_mapTheory;
 open pure_expTheory pure_valueTheory pure_evalTheory pure_eval_lemmasTheory
      pure_exp_lemmasTheory pure_miscTheory pure_exp_relTheory pure_congruenceTheory;
+open  pure_alpha_equivTheory;
 
 val _ = new_theory "pure_demand";
 
@@ -1761,6 +1762,7 @@ End
 
 Definition exp_eq_in_ctxt_def:
   exp_eq_in_ctxt Nil = (λe1 e2. e1 ≈ e2) ∧
+ (* exp_eq_in_ctxt (IsFree s c) e1 e2 = exp_eq_in_ctxt c (Lam s e1) (Lam s e2) ∧ *)
   exp_eq_in_ctxt (IsFree s c) e1 e2 = (∀e3. closed e3 ⇒ exp_eq_in_ctxt c (Let s e3 e1) (Let s e3 e2)) ∧
   exp_eq_in_ctxt (Bind s e3 c) e1 e2 = exp_eq_in_ctxt c (Let s e3 e1) (Let s e3 e2) ∧
   exp_eq_in_ctxt (RecBind l c) e1 e2 = exp_eq_in_ctxt c (Letrec l e1) (Letrec l e2)
@@ -2209,9 +2211,16 @@ Proof
 QED
 
 Theorem Let_Lam:
-  ∀v w e1 e2. closed e1 ∧ v ≠ w ⇒ Let v e1 (Lam w e2) = Lam w (Let v e1 e2)
+  ∀v w e1 e2 b. closed e1 ∧ v ≠ w ⇒ (Let v e1 (Lam w e2) ≅? Lam w (Let v e1 e2)) b
 Proof
-  cheat
+  rw []
+  \\ irule exp_eq_trans
+  \\ irule_at Any beta_equality
+  \\ gvs [subst1_def]
+  \\ irule exp_eq_Lam_cong
+  \\ irule $ iffLR exp_eq_sym
+  \\ irule beta_equality
+  \\ gvs []
 QED
 
 Theorem Let_freevars:
@@ -2234,33 +2243,119 @@ Proof
   \\ gvs [IMP_closed_subst, FRANGE_FLOOKUP]
 QED
 
+Theorem Let_App_in_ctxt:
+  ∀c s e1 e2 e3. exp_eq_in_ctxt c (Let s e1 (App e2 e3)) (App (Let s e1 e2) (Let s e1 e3))
+Proof
+  rpt gen_tac
+  \\ irule exp_eq_IMP_exp_eq_in_ctxt
+  \\ gvs [Let_App]
+QED
+
+Theorem Let_Lam_weak:
+  ∀v w e1 e2 b. v ≠ w ⇒ w ∉ freevars e1 ⇒ (Let v e1 (Lam w e2) ≅? Lam w (Let v e1 e2)) b
+Proof
+  rw [exp_eq_def, bind_def] >> IF_CASES_TAC >>
+  gvs [app_bisimilarity_eq, exp_eq_refl] >>
+  rpt (irule_at Any IMP_closed_subst) >>
+  drule_then assume_tac $ GSYM subst_fdomsub >>
+  gvs [subst_def, DOMSUB_COMMUTES] >>
+  irule_at Any Let_Lam >>
+  irule_at Any IMP_closed_subst >>
+  rw [FRANGE_FLOOKUP]
+QED
+
+Theorem Let_Let:
+  ∀v w e1 e2 e3 b. v ≠ w ∧ v ∉ freevars e2 ∧ w ∉ freevars e1 ⇒
+                   (Let v e1 (Let w e2 e3) ≅? Let w e2 (Let v e1 e3)) b
+Proof
+  rw []
+  \\ irule eval_IMP_exp_eq
+  \\ rw [subst_def]
+  \\ rename1 ‘subst (f \\ _ \\ _)’
+  \\ ‘∀v. v ∈ FRANGE f ⇒ closed v’ by (rw [FRANGE_FLOOKUP])
+  \\ drule $ GSYM subst_fdomsub
+  \\ last_x_assum assume_tac
+  \\ last_x_assum assume_tac
+  \\ drule $ GSYM subst_fdomsub
+  \\ rw [eval_Let, subst_def, bind1_def, IMP_closed_subst, DOMSUB_COMMUTES]
+  \\ AP_TERM_TAC
+  \\ rw [fmap_domsub, COMPL_UNION]
+  \\ irule subst1_subst1
+  \\ gvs [IMP_closed_subst]
+QED
+        
+Theorem Let_Let_in_ctxt:
+  ∀v w e1 e2 e3 c. v ≠ w ∧ v ∉ freevars e2 ∧ w ∉ freevars e1 ⇒
+                   exp_eq_in_ctxt c (Let v e1 (Let w e2 e3)) (Let w e2 (Let v e1 e3))
+Proof
+  rw []
+  \\ irule exp_eq_IMP_exp_eq_in_ctxt
+  \\ gvs [Let_Let]
+QED
+
 Theorem exp_eq_in_ctxt_Lam:
-  ∀c v e e'. exp_eq_in_ctxt (IsFree v c) e e' ⇒ exp_eq_in_ctxt c (Lam v e) (Lam v e')
+  ∀c s e1 e2. exp_eq_in_ctxt (IsFree s c) e1 e2
+              ⇒ exp_eq_in_ctxt c (Lam s e1) (Lam s e2)
 Proof
   Induct
-  \\ rw [exp_eq_in_ctxt_def]
-  >- cheat
+  \\ fs[exp_eq_in_ctxt_def] \\ rw [exp_eq_in_ctxt_def]
+  >- (rw [exp_eq_Lam_strong]
+      \\ first_x_assum $ drule_then assume_tac
+      \\ irule exp_eq_trans
+      \\ irule_at Any beta_equality
+      \\ fs []
+      \\ irule $ iffLR exp_eq_sym
+      \\ irule exp_eq_trans
+      \\ irule_at (Pos last) beta_equality
+      \\ fs [exp_eq_sym])
+  >>~ [‘Letrec l (Lam s _)’]
+  >- (irule exp_eq_in_ctxt_trans
+      \\ cheat
+      )
+  \\ rename1 ‘Let v e3 (Lam w _)’
+  \\ ‘∃s. s ∉ {v} ∪ {w} ∪ freevars e3 ∪ freevars e1 ∪ freevars e2’
+    by (‘INFINITE 𝕌(:string)’ by simp []
+        \\ gvs [NOT_IN_FINITE])
   \\ irule exp_eq_in_ctxt_trans
-  \\ irule_at Any exp_eq_in_ctxt_trans
-  >>~[‘Let v _ (Lam w _)’]
-  >- (Cases_on ‘v = w’
-      >- (last_x_assum $ irule_at Any
-          \\ irule_at (Pos last) $ iffLR exp_eq_in_ctxt_sym
-          \\ irule_at (Pos hd) Let_freevars
-          \\ irule_at (Pos last) Let_freevars
-          \\ gvs [exp_eq_in_ctxt_def, freevars_def]
-          \\ rw []
-          \\ irule exp_eq_in_ctxt_trans
-          \\ irule_at Any exp_eq_in_ctxt_trans
-          \\ first_x_assum $ irule_at Any
-          \\ irule_at Any Let_freevars
-          \\ rpt $ first_assum $ irule_at Any
-          \\ irule_at Any $ iffLR exp_eq_in_ctxt_sym
-          \\ gvs [Let_freevars, closed_def])
-      \\ last_x_assum $ irule_at Any
-      \\ fs [exp_eq_in_ctxt_def]
-      \\ cheat)
-  \\ cheat
+  \\ irule_at (Pos hd) exp_eq_IMP_exp_eq_in_ctxt
+  \\ irule_at Any exp_eq_App_cong \\ irule_at Any exp_eq_Lam_cong
+  \\ irule_at Any exp_alpha_exp_eq
+  \\ irule_at Any exp_alpha_Alpha
+  \\ fs [] \\ first_assum $ irule_at Any
+  \\ irule_at Any exp_eq_refl \\ fs []
+  \\ irule exp_eq_in_ctxt_trans
+  \\ irule_at (Pos hd) exp_eq_IMP_exp_eq_in_ctxt
+  \\ irule_at Any Let_Lam_weak \\ fs []
+  \\ irule exp_eq_in_ctxt_trans
+  \\ irule_at (Pos last) exp_eq_IMP_exp_eq_in_ctxt
+  \\ irule_at Any $ iffLR exp_eq_sym
+  \\ irule_at Any exp_eq_App_cong \\ irule_at Any exp_eq_Lam_cong
+  \\ irule_at Any exp_alpha_exp_eq
+  \\ irule_at Any exp_alpha_Alpha
+  \\ first_assum $ irule_at Any
+  \\ irule_at Any exp_eq_refl \\ fs []
+  \\ irule exp_eq_in_ctxt_trans
+  \\ irule_at (Pos last) exp_eq_IMP_exp_eq_in_ctxt
+  \\ irule_at Any $ iffLR exp_eq_sym
+  \\ irule_at Any Let_Lam_weak \\ fs []
+  \\ last_x_assum $ irule_at Any
+  \\ rw []
+  \\ irule exp_eq_in_ctxt_trans \\ irule_at Any exp_eq_in_ctxt_trans
+  \\ last_x_assum $ irule_at Any
+  \\ first_assum $ irule_at (Pos hd)
+  \\ rpt $ irule_at Any exp_eq_IMP_exp_eq_in_ctxt
+  \\ TRY $ last_assum $ irule_at Any
+  \\ irule_at (Pos last) $ iffLR exp_eq_sym
+  \\ conj_tac
+  \\ irule exp_eq_trans
+  \\ irule_at (Pos last) Let_Let
+  \\ gvs [closed_def]
+  \\ irule exp_eq_App_cong \\ fs [exp_eq_refl]
+  \\ irule exp_eq_Lam_cong
+  \\ irule exp_eq_App_cong \\ fs [exp_eq_refl]
+  \\ irule exp_alpha_exp_eq
+  \\ irule exp_alpha_Alpha
+  \\ fs []
 QED
 
 Theorem exp_eq_in_ctxt_Lams:
