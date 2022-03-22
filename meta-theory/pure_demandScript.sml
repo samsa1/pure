@@ -8,7 +8,7 @@ open arithmeticTheory listTheory stringTheory alistTheory dep_rewrite
      BasicProvers pred_setTheory relationTheory rich_listTheory finite_mapTheory;
 open pure_expTheory pure_valueTheory pure_evalTheory pure_eval_lemmasTheory
      pure_exp_lemmasTheory pure_miscTheory pure_exp_relTheory pure_congruenceTheory;
-open  pure_alpha_equivTheory;
+open  pure_alpha_equivTheory pure_exp_eq_in_ctxtTheory;
 
 val _ = new_theory "pure_demand";
 
@@ -151,14 +151,6 @@ Proof
   \\ fs [subst_def, eval_wh_def, eval_wh_to_def]
 QED
 
-Theorem exp_eq_l_refl:
-  ∀b l. LIST_REL (λx y. (x ≅? y) b) l l
-Proof
-  gen_tac
-  \\ Induct
-  \\ fs [exp_eq_refl]
-QED
-
 Theorem exp_eq_Projs_cong:
   ∀ps x y b. (x ≅? y) b ⇒ (Projs ps x ≅? Projs ps y) b
 Proof
@@ -204,18 +196,19 @@ QED
 val _ = set_fixity "demands" (Infixl 480);
 
 Definition demands_def:
-  (e demands (p,v)) = (e ≈ Seq (Projs p (Var v)) e)
+  (e demands ((p,v), c)) = (exp_eq_in_ctxt c e (Seq (Projs p (Var v)) e))
 End
 
 val _ = set_fixity "needs" (Infixl 480);
 Definition needs_def:
-  (e needs (ps, e')) = (e ≈ Seq (Projs ps e') e)
+  (e needs ((ps, e'), c)) = (exp_eq_in_ctxt c e (Seq (Projs ps e') e))
 End
 
 Theorem is_bot_IMP_IMP_needs:
-  ∀e ps e'. (∀f. is_bot (eval_wh (subst f (Projs ps e'))) ⇒ is_bot (eval_wh (subst f e))) ⇒ e needs (ps, e')
+  ∀e ps e' c. (∀f. is_bot (eval_wh (subst f (Projs ps e'))) ⇒ is_bot (eval_wh (subst f e))) ⇒ e needs ((ps, e'), c)
 Proof
   rw [needs_def]
+  \\ irule exp_eq_IMP_exp_eq_in_ctxt
   \\ irule no_err_eval_wh_IMP_exp_eq
   \\ rw [no_err_eval_wh_def, subst_def, eval_wh_thm]
   \\ first_x_assum $ qspecl_then [‘f’] assume_tac
@@ -223,20 +216,20 @@ Proof
 QED
 
 Theorem needs_Var_is_demands:
-  e needs (ps, Var v) ⇔ e demands (ps, v)
+  e needs ((ps, Var v), c) ⇔ e demands ((ps, v), c)
 Proof
   rw [needs_def, demands_def] \\ fs []
 QED
 
 Theorem needs_refl:
-  ∀e. e needs ([],e)
+  ∀e c. e needs (([],e), c)
 Proof
   rw [needs_def, Projs_def]
-  \\ metis_tac [Seq_id, exp_eq_sym]
+  \\ metis_tac [Seq_id, exp_eq_sym, exp_eq_IMP_exp_eq_in_ctxt]
 QED
 
 Theorem needs_Var:
-  (Var v) needs ([], Var v)
+  (Var v) needs (([], Var v), c)
 Proof
   fs [needs_refl]
 QED
@@ -245,21 +238,21 @@ Theorem needs_Proj:
   e needs d ⇒ (Proj n i e) needs d
 Proof
   PairCases_on ‘d’
-  \\ rename1 ‘(ps, e')’
+  \\ rename1 ‘((ps, e'), _)’
   \\ rw [needs_def, Projs_def]
-  \\ irule exp_eq_trans
+  \\ irule exp_eq_in_ctxt_trans
   \\ qexists_tac ‘Seq e (Proj n i e)’
-  \\ conj_tac >- fs [Proj_Seq]
+  \\ conj_tac >- fs [Proj_Seq, exp_eq_IMP_exp_eq_in_ctxt]
   \\ qabbrev_tac ‘p = Projs ps e'’
-  \\ irule exp_eq_trans
+  \\ irule exp_eq_in_ctxt_trans
   \\ qexists_tac ‘Seq (Seq p e) (Proj n i e)’
   \\ conj_tac
-  >- (irule exp_eq_Prim_cong \\ fs [exp_eq_refl])
-  \\ irule exp_eq_trans
+  >- (irule exp_eq_in_ctxt_Prim \\ fs [exp_eq_in_ctxt_refl])
+  \\ irule exp_eq_in_ctxt_trans
   \\ qexists_tac ‘Seq p (Seq e (Proj n i e))’
-  \\ conj_tac >- fs [Seq_assoc]
-  \\ irule exp_eq_Prim_cong \\ fs [exp_eq_refl, Let_Var]
-  \\ metis_tac [Proj_Seq, exp_eq_sym]
+  \\ conj_tac >- fs [exp_eq_IMP_exp_eq_in_ctxt, Seq_assoc]
+  \\ irule exp_eq_in_ctxt_Prim \\ fs [exp_eq_IMP_exp_eq_in_ctxt, exp_eq_refl, Let_Var]
+  \\ metis_tac [exp_eq_IMP_exp_eq_in_ctxt, Proj_Seq, exp_eq_sym]
 QED
 
 Theorem needs_Projs:
@@ -275,28 +268,28 @@ Proof
 QED
 
 Theorem needs_trans:
-  e needs (ps,e') ∧ e' needs (ps',e'') ⇒ e needs (ps',e'')
+  e needs ((ps,e'), c) ∧ e' needs ((ps',e''), c) ⇒ e needs ((ps',e''), c)
 Proof
   rw [needs_def]
-  \\ irule exp_eq_trans
+  \\ irule exp_eq_in_ctxt_trans
   \\ first_assum $ irule_at Any
-  \\ irule exp_eq_trans
+  \\ irule exp_eq_in_ctxt_trans
   \\ qexists_tac ‘Seq (Seq (Projs ps' e'') (Projs ps e')) e’
   \\ conj_tac >-
-   (irule exp_eq_Prim_cong \\ fs [exp_eq_refl]
+   (irule exp_eq_in_ctxt_Prim \\ fs [exp_eq_in_ctxt_refl]
     \\ assume_tac needs_Projs \\ metis_tac [needs_def])
-  \\ irule exp_eq_trans
+  \\ irule exp_eq_in_ctxt_trans
   \\ qexists_tac ‘Seq (Projs ps' e'') (Seq (Projs ps e') e)’
-  \\ conj_tac >- fs [Seq_assoc]
-  \\ irule exp_eq_Prim_cong
-  \\ fs [exp_eq_refl, exp_eq_sym]
+  \\ conj_tac >- fs [exp_eq_IMP_exp_eq_in_ctxt, Seq_assoc]
+  \\ irule exp_eq_in_ctxt_Prim
+  \\ fs [exp_eq_in_ctxt_refl, exp_eq_in_ctxt_sym]
 QED
 
 Theorem needs_Projs_Var:
-  (Proj s i (Var v)) needs ([(s,i)], Var v)
+  (Proj s i (Var v)) needs (([(s,i)], Var v), c)
 Proof
   rw [needs_def, Projs_def]
-  \\ metis_tac [Seq_id, exp_eq_sym]
+  \\ metis_tac [exp_eq_IMP_exp_eq_in_ctxt, Seq_id, exp_eq_sym]
 QED
 
 Theorem needs_Seq:
@@ -304,66 +297,64 @@ Theorem needs_Seq:
 Proof
   PairCases_on ‘d’
   \\ rw [needs_def]
-  \\ irule exp_eq_trans
+  \\ irule exp_eq_in_ctxt_trans
   \\ qexists_tac ‘Seq (Seq (Projs d0 d1) e) e'’
   \\ conj_tac >-
-   (irule exp_eq_Prim_cong \\ fs [exp_eq_refl])
-  \\ fs [Seq_assoc]
+   (irule exp_eq_in_ctxt_Prim \\ fs [exp_eq_in_ctxt_refl])
+  \\ fs [exp_eq_IMP_exp_eq_in_ctxt, Seq_assoc]
 QED
-
 
 Theorem needs_Seq2:
   e' needs d ⇒ (Seq e e') needs d
 Proof
   PairCases_on ‘d’
   \\ rw [needs_def]
-  \\ irule exp_eq_trans
+  \\ irule exp_eq_in_ctxt_trans
   \\ qexists_tac ‘Seq e (Seq (Projs d0 d1) e')’
-  \\ fs [exp_eq_Prim_cong, exp_eq_refl]
-  \\ irule exp_eq_trans
+  \\ fs [exp_eq_in_ctxt_Prim, exp_eq_in_ctxt_refl]
+  \\ irule exp_eq_in_ctxt_trans
+  \\ irule_at (Pos last) exp_eq_IMP_exp_eq_in_ctxt
   \\ irule_at Any Seq_assoc
-  \\ irule exp_eq_trans
+  \\ irule exp_eq_in_ctxt_trans
+  \\ irule_at (Pos last) exp_eq_IMP_exp_eq_in_ctxt
   \\ irule_at Any Seq_comm
-  \\ metis_tac [Seq_assoc, exp_eq_sym]
+  \\ metis_tac [exp_eq_IMP_exp_eq_in_ctxt, Seq_assoc, exp_eq_sym]
 QED
 
 Theorem needs_Let1:
-  e needs d ∧ e' demands ([],w) ⇒ (Let w e e') needs d
+  e needs (d, c) ∧ e' demands (([],w), Bind w e c) ⇒ (Let w e e') needs (d, c)
 Proof
   PairCases_on ‘d’
-  \\ rw [demands_def,needs_def,Projs_def]
-  \\ irule exp_eq_trans
+  \\ rw [demands_def,needs_def,Projs_def, exp_eq_in_ctxt_def]
+  \\ irule exp_eq_in_ctxt_trans
   \\ qabbrev_tac ‘p = (Projs d0 d1)’
-  \\ qexists_tac ‘Let w e (Seq (Var w) e')’
-  \\ conj_tac THEN1
-   (irule exp_eq_App_cong \\ fs [exp_eq_refl]
-    \\ irule exp_eq_Lam_cong \\ fs [exp_eq_refl])
-  \\ irule exp_eq_trans
+  \\ first_assum $ irule_at Any
+  \\ irule exp_eq_in_ctxt_trans
   \\ qexists_tac ‘Seq (Let w e (Var w)) (Let w e e')’
-  \\ conj_tac THEN1 fs [Let_Seq]
-  \\ irule exp_eq_trans
+  \\ conj_tac THEN1 fs [exp_eq_IMP_exp_eq_in_ctxt, Let_Seq]
+  \\ irule exp_eq_in_ctxt_trans
   \\ qexists_tac ‘Seq e (Let w e e')’
   \\ conj_tac
-  THEN1 (irule exp_eq_Prim_cong \\ fs [exp_eq_refl,Let_Var])
-  \\ irule exp_eq_trans
+  THEN1 (irule exp_eq_in_ctxt_Prim \\ fs [exp_eq_IMP_exp_eq_in_ctxt, exp_eq_refl,Let_Var])
+  \\ irule exp_eq_in_ctxt_trans
   \\ qexists_tac ‘Seq (Seq p e) (Let w e e')’
   \\ conj_tac THEN1
-   (irule exp_eq_Prim_cong \\ fs [exp_eq_refl])
-  \\ irule exp_eq_trans
+   (irule exp_eq_in_ctxt_Prim \\ fs [exp_eq_in_ctxt_refl])
+  \\ irule exp_eq_in_ctxt_trans
   \\ qexists_tac ‘Seq p (Seq e (Let w e e'))’
-  \\ conj_tac THEN1 fs [Seq_assoc]
-  \\ irule exp_eq_Prim_cong \\ fs [exp_eq_refl]
-  \\ once_rewrite_tac [exp_eq_sym]
-  \\ irule exp_eq_trans
-  \\ irule_at Any exp_eq_App_cong
-  \\ irule_at Any exp_eq_Lam_cong
-  \\ irule_at (Pos $ el 2) exp_eq_refl
-  \\ first_x_assum $ irule_at Any
+  \\ conj_tac THEN1 fs [exp_eq_IMP_exp_eq_in_ctxt, Seq_assoc]
+  \\ irule exp_eq_in_ctxt_Prim \\ fs [exp_eq_in_ctxt_refl]
+  \\ once_rewrite_tac [exp_eq_in_ctxt_sym]
+  \\ irule exp_eq_in_ctxt_trans
+  \\ first_assum $ irule_at Any
+  \\ irule exp_eq_IMP_exp_eq_in_ctxt
   \\ irule exp_eq_trans
   \\ irule_at Any Let_Seq
   \\ irule exp_eq_Prim_cong
   \\ fs [exp_eq_refl, Let_Var]
 QED
+
+(* here *)
 
 Theorem needs_Let_Cons: (* expects program to be in ANF *)
   e demands ((s,LENGTH xs)::ps,w) ⇒
@@ -837,6 +828,12 @@ val _ = set_fixity "fdemands" (Infixl 480);
 
 Definition fdemands_def:
   f fdemands ((ps, i), len) = (i < len ∧ ∃s. FINITE s ∧ ∀l. (set l ∩ s = {} ∧ LENGTH l = len) ⇒ (Apps f (MAP Var l)) demands (ps, EL i l))
+End
+
+val _ = set_fixity "fdemands_in_ctxt" (Infixl 480);
+
+Definition fdemands_in_ctxt_def:
+  f fdemands_in_ctxt ((ps, i), len, c) = (i < len ∧ ∃s. FINITE s ∧ ∀l. (set l ∩ s = {} ∧ LENGTH l = len) ⇒ (Apps f (MAP Var l)) demands_in_ctxt ((ps, EL i l), c))
 End
 
 val _ = set_fixity "fdemands_depth" (Infixl 480);
@@ -1445,28 +1442,6 @@ Proof
   \\ cheat
 QED
 
-(*
-Theorem Lam_fdemands:
-  ∀e ps v. e demands (ps, v) ⇒ Lam v e fdemands ((ps, 0), 1)
-Proof
-  rw [fdemands_def]
-  \\ rename1 ‘MAP Var l2’
-  \\ Cases_on ‘l2’
-  \\ fs [Apps_def, demands_Let3]
-QED
-
-Theorem Lam_fdemands2:
-  ∀k e ps i v. e fdemands ((ps, i), k) ⇒ Lam v e fdemands ((ps, SUC i), SUC k)
-Proof
-  Induct
-  \\ fs [fdemands_def]
-  \\ rw []
-  \\ rename1 ‘MAP Var l’
-  \\ Cases_on ‘l’ \\ fs [Apps_def]
-  \\ first_x_assum irule
-QED
-*)
-
 Theorem Lam_require:
   ∀l l' i h.
     LENGTH l = LENGTH l' ∧ ¬MEM h l ⇒
@@ -1594,788 +1569,122 @@ Proof
   \\ fs [EVERY_EL]
 QED
 
-(*Theorem Lams_equiv:
-  ∀ l l' e b. ALL_DISTINCT l ∧ ALL_DISTINCT l' ∧ LENGTH l = LENGTH l' ⇒
-            (Lams l e ≅? Lams l' (subst (FEMPTY |++ REVERSE (ZIP (l', MAP Var l))) e)) b
-Proof
-  Induct
-  \\ fs [Lams_def]
-  >- fs [FUPDATE_LIST, exp_eq_refl]
-  \\ gen_tac
-  \\ Cases
-  \\ fs [Lams_def]
-  \\ rw []
-
-QED
-
-Theorem Apps_Lams_Seq:
-  ∀l l' e1 e2 b. LENGTH l = LENGTH l' ⇒
-           (Apps (Lams l (Seq e1 e2)) l' ≅? Seq (Apps (Lams l e1) l') (Apps (Lams l e2) l')) b
-Proof
-  Induct
-  \\ fs [Apps_def, Lams_def, exp_eq_refl]
-  \\ gen_tac
-  \\ Cases
-  \\ fs [Apps_def]
-  \\ rw []
-  \\ cheat
-
-
-(*  gen_tac
-  \\ completeInduct_on ‘LENGTH l’
-  \\ rename1 ‘v = _’
-  \\ Cases_on ‘v’
-  \\ fs [Apps_def, Lams_def, exp_eq_refl]
-  \\ gen_tac
-  \\ strip_tac
-  \\ ‘LENGTH l > 0’ by fs []
-  \\ drule last_exists
-  \\ rw []
-  \\ rename1 ‘Apps _ l2’
-  \\ ‘LENGTH l2 > 0’ by fs []
-  \\ drule last_exists
-  \\ rw [last_Lams]
-  \\ rw [last_Apps]
-  \\ *)
-
-QED
-
-Theorem find_fdemands_soundness:
-  ∀e m. m = find_fdemands {} e ⇒
-        (∀l i ps. ALL_DISTINCT l ∧ i < LENGTH l ⇒ (ps, EL i l) ∈ m ⇒ (Lams l e) fdemands ((ps, i), LENGTH l))
-Proof
-  Induct using freevars_ind
-  \\ fs [find_fdemands_def]
-  \\ fs [Lams_require_arg]
-  \\ rename1 ‘Prim op es’
-  \\ Cases_on ‘op’
-  \\ Cases_on ‘es’
-  \\ fs [find_fdemands_def]
-  \\ rename1 ‘e1::tl’
-  \\ Cases_on ‘tl’
-  \\ fs [find_fdemands_def]
-  \\ rename1 ‘e1::e2::tl’
-  \\ Cases_on ‘tl’
-  \\ fs [find_fdemands_def]
-  >~[‘Seq e1 e2’]
-  >- (rw [fdemands_def]
-         )
-QED
-
-Theorem subst_Apps:
-  ∀l f e. subst f (Apps e l) = Apps (subst f e) (MAP (subst f) l)
-Proof
-    Induct
-    \\ fs [Apps_def, subst_def]
-QED
-
-Theorem Letrec_not_user_first:
-  ∀l2 l1 m h e2 n. MEM m l1 ⇒
-            App (Letrec [(n, Lams (h::l1) (Var m))] (Var n)) e2
-                 ≈ Letrec [(n, Lams l1 (Var m))] (Var n)
-Proof
-  rw []
-  \\ irule eval_wh_IMP_exp_eq
-  \\ rw [subst_def, eval_wh_thm, FLOOKUP_FDIFF, subst_funs_def, bind_def,
-         FUPDATE_LIST, FLOOKUP_UPDATE, Lams_def]
-  \\ cheat
-QED
-
-
-Theorem demands_letRec:
-  ∀l l' i. LENGTH l ≤ LENGTH l' ∧ i < LENGTH l ⇒ Apps (Letrec [(n, Lams l (Var (EL i l)))] (Var n)) (MAP Var l') demands ([], EL i l')
-Proof
-  Induct
-  \\ fs [demands_def, Projs_def]
-  \\ rw []
-  \\ rename1 ‘MAP Var l'’
-  \\ Cases_on ‘l'’
-  \\ fs []
-  \\ rename1 ‘Lams (h1::tl1)’
-  \\ rename1 ‘Var h2::MAP Var tl2’
-  \\ fs [Apps_def]
-  \\ Cases_on ‘i’
-  \\ fs []
-  >-  (irule eval_wh_IMP_exp_eq
-       \\ rw []
-       \\ fs [subst_def, subst_Apps, eval_wh_Seq, FLOOKUP_FDIFF]
-       \\ cheat)
-  \\ irule exp_eq_trans
-  \\ cheat
-QED
-
-Theorem find_fdemands_soudness:
-  ∀e fd m l n. m = find_fdemands l fd e ∧
-               (∀n ps i len. (n, (ps, i), len) ∈ fd ⇒ i < len) ∧
-             (∀ps i. i < LENGTH l ∧ (n, (ps, i), LENGTH l) ∈ fd ⇒ (ps, EL i l) ∈ m)
-             ⇒ (∀d. (n, d, LENGTH l) ∈ fd ⇒ (Letrec [(n, Lams l e)] (Var n)) fdemands (d, LENGTH l))
-Proof
-  completeInduct_on ‘exp_size e’
-  \\ Cases
-  \\ fs [find_fdemands_def]
-  \\ strip_tac
-  \\ rpt gen_tac
-  \\ strip_tac
-  \\ PairCases
-  \\ rw [fdemands_def]
-  \\ first_assum drule
-  \\ fs []
-  \\ strip_tac
-  >~[‘App _ _’]
-  >- (first_x_assum $ qspecl_then [‘d0’, ‘d1’] assume_tac
-      \\ gvs [])
-  >~[‘Lam _ _’]
-  >- (first_x_assum $ qspecl_then [‘d0’, ‘d1’] assume_tac
-      \\ gvs [])
-  >~[‘Letrec [(_, Lams _ (Letrec _ _))]’]
-  >- (first_x_assum $ qspecl_then [‘d0’, ‘d1’] assume_tac
-      \\ gvs [])
-  >~[‘Prim ope exprl’]
-  >- (Cases_on ‘ope’
-      \\ fs [find_fdemands_def]
-      >~[‘Prim Seq _’]
-      >- cheat
-      >~[‘Prim If _’]
-      >- cheat
-      \\ Cases_on ‘exprl’
-      \\ first_x_assum $ qspecl_then [‘d0’, ‘d1’] assume_tac
-      \\ gvs [find_fdemands_def])
-  >- (first_assum $ qspecl_then [‘d0’, ‘d1’] assume_tac
-      \\ gvs [demands_def, Projs_def]
-      \\ irule eval_wh_IMP_exp_eq
-      \\ last_x_assum $ kall_tac
-      \\ last_x_assum $ kall_tac
-      \\ last_x_assum $ kall_tac
-      \\ last_x_assum $ kall_tac
-      \\ Induct_on ‘l'’
-      \\ fs []
-      \\ rw [subst_def, subst_Apps]
-      \\ cheat)
-QED*)
-
-Datatype:
-  ctxt = Nil
-       | IsFree string ctxt
-       | Bind string exp ctxt
-       | RecBind ((string # exp) list) ctxt
-End
-
-Definition exp_eq_in_ctxt_def:
-  exp_eq_in_ctxt Nil = (λe1 e2. e1 ≈ e2) ∧
- (* exp_eq_in_ctxt (IsFree s c) e1 e2 = exp_eq_in_ctxt c (Lam s e1) (Lam s e2) ∧ *)
-  exp_eq_in_ctxt (IsFree s c) e1 e2 = (∀e3. closed e3 ⇒ exp_eq_in_ctxt c (Let s e3 e1) (Let s e3 e2)) ∧
-  exp_eq_in_ctxt (Bind s e3 c) e1 e2 = exp_eq_in_ctxt c (Let s e3 e1) (Let s e3 e2) ∧
-  exp_eq_in_ctxt (RecBind l c) e1 e2 = exp_eq_in_ctxt c (Letrec l e1) (Letrec l e2)
-End
-
-Definition ctxt_size_def:
-  ctxt_size Nil = 0n ∧
-  ctxt_size (IsFree s ctxt) = 1 + ctxt_size ctxt ∧
-  ctxt_size (Bind s e ctxt) = 1 + list_size char_size s +  exp_size e + ctxt_size ctxt ∧
-  ctxt_size (RecBind sel ctxt) = 1 + exp1_size sel + ctxt_size ctxt
-End
-
-(*
-Definition subst_ctxt_def:
-  (subst_ctxt ctxt (App f e) = App (subst_ctxt ctxt f) (subst_ctxt ctxt e)) ∧
-  (subst_ctxt  ctxt (Prim op l) = Prim op (MAP (subst_ctxt ctxt) l)) ∧
-  (subst_ctxt ctxt (Lam v e) = Lam v (subst_ctxt (IsFree v ctxt) e)) ∧
-  (subst_ctxt Nil (Var n) = Var n) ∧
-  (subst_ctxt (IsFree v ctxt) (Var n) = if n = v
-                                        then Var n
-                                        else subst_ctxt ctxt (Var n)) ∧
-  (subst_ctxt (Bind v exp ctxt tl) (Var n) = if n = v
-                                         then subst_ctxt ctxt exp
-                                         else subst_ctxt tl (Var n)) ∧
-  (subst_ctxt (RecBind nel ctxt) (Var n) = if MEM n (MAP FST nel)
-                                                then Var n
-                                                else subst_ctxt ctxt (Var n)) ∧
-  (subst_ctxt ctxt (Letrec nel e) = Letrec nel (subst_ctxt (RecBind nel ctxt) e))
-Termination
-  WF_REL_TAC ‘inv_image ($< LEX $<) (λ(c,e).(exp_size e + ctxt_size c, exp_size e))’
-  \\ rw [ctxt_size_def] \\ fs []
-End*)
-
-Inductive find: (* i i o o *)
+Inductive find: (* i i i o o o *)
 [find_Bottom:]
-  (∀e (c:ctxt).
-    find e c {} e) ∧
+  (∀e (c:ctxt) (fdc : (string # (bool list)) -> bool).
+    find e c fdc {} e NONE) ∧
 [find_Seq:]
-  (∀e e' c (p:(string#num) list) ds v.
-    find e c ds e' ∧ (p,v) ∈ ds ⇒
-    find e c ds (Seq (Var v) e')) ∧
+  (∀e e' c (p:(string#num) list) ds v fdc fd.
+    find e c fdc ds e' fd ∧ (p,v) ∈ ds ⇒
+    find e c fdc ds (Seq (Var v) e') fd) ∧
 [find_Seq2:]
-  (∀e e' e2 e2' c ds ds2.
-     find e c ds e' ∧ find e2 c ds2 e2' ⇒
-     find (Seq e e2) c (ds ∪ ds2) (Seq e' e2')) ∧
+  (∀e e' e2 e2' c ds ds2 fdc fd fd2.
+     find e c fdc ds e' fd ∧ find e2 c fdc ds2 e2' fd2 ⇒
+     find (Seq e e2) c fdc (ds ∪ ds2) (Seq e' e2') fd2) ∧
 [find_If:]
-  (∀ec et ee ec' et' ee' c dsc dst dse.
-     find ec c dsc ec' ∧
-     find et c dst et' ∧
-     find ee c dse ee' ⇒
-     find (If ec et ee) c (dsc ∪ (dst ∩ dse)) (If ec' et' ee')) ∧
+  (∀ec et ee ec' et' ee' c dsc dst dse fdc fd fdt fde.
+     find ec c fdc dsc ec' fd
+     ∧ find et c fdc dst et' fdt
+     ∧ find ee c fdc dse ee' fde
+     ⇒ find (If ec et ee) c fdc (dsc ∪ (dst ∩ dse)) (If ec' et' ee') NONE) ∧
 [find_Var:]
-  (∀n c. find (Var n) c {([],n)} (Var n)) ∧
+  (∀n c fdc. find (Var n) c fdc {([],n)} (Var n) NONE) ∧
+[find_Var2:]
+  (∀n c fdc argsDemanded.
+     (n, argsDemanded) ∈ fdc
+         ⇒ find (Var n) c fdc {([],n)} (Var n) (SOME (argsDemanded, {}))) ∧
+[find_No_args:]
+  (∀c fdc e e' ds ds'.
+     find e c fdc ds e' (SOME ([], ds'))
+     ⇒ find e c fdc (ds ∪ ds') e' NONE) ∧
 [find_App:]
-  (∀f f' e e' c ds ds2.
-     find f c ds f' ∧
-     find e c ds2 e' ⇒
-     find (App f e) c ds (App f' e')) ∧
+  (∀f f' e e' fdc c ds ds2 fd1 fd2.
+     find f c fdc ds f' fd1 ∧
+     find e c fdc ds2 e' fd2 ⇒
+     find (App f e) c fdc ds (App f' e') NONE) ∧
+[find_App_arg_strict:]
+  (∀f f' e e' fdc c ds ds2 ds3 fd argD.
+     find f c fdc ds f' (SOME (T::argD, ds3))
+     ∧ find e c fdc ds2 e' fd
+     ⇒ find (App f e) c fdc ds (App f' e') (SOME (argD, ds2 ∪ ds3))) ∧
+[find_App_arg_not_strict:]
+  (∀f f' e e' fdc c ds ds2 ds3 fd argD b.
+     find f c fdc ds f' (SOME (b::argD, ds3))
+     ∧ find e c fdc ds2 e' fd
+     ⇒ find (App f e) c fdc ds (App f' e') (SOME (argD, ds3))) ∧
 [find_Apps:]
-  (∀f f' el el' c ds.
-     LIST_REL (λe e'. ∃ds. find e c ds e') el el' ∧
-     find f c ds f' ⇒ find (Apps f el) c ds (Apps f' el')) ∧
+  (∀f f' el el' c ds fdc fd.
+     LIST_REL (λe e'. ∃ds fd. find e c fdc ds e' fd) el el' ∧
+     find f c fdc ds f' fd ⇒ find (Apps f el) c fdc ds (Apps f' el') NONE) ∧
 [find_Prim:]
-  (∀c el el' ope.
-     LENGTH el = LENGTH el' ∧ (∀k. k < LENGTH el ⇒ ∃ds. find (EL k el) c ds (EL k el') )
-     ⇒ find (Prim ope el) c {} (Prim ope el')) ∧
+  (∀c el el' ope fdc.
+     LENGTH el = LENGTH el' ∧ (∀k. k < LENGTH el ⇒ ∃ds fd. find (EL k el) c fdc ds (EL k el') fd)
+     ⇒ find (Prim ope el) c fdc {} (Prim ope el') NONE) ∧
 [find_Prim1:]
-  (∀c el el' ope ds.
-     LENGTH el = LENGTH el' ∧
-     (∀k. k < LENGTH el ⇒ ∃ds'. find (EL k el) c ds' (EL k el')) (* Rewritte with LIST_REL *)
-     ∧ find (EL 0 el) c ds (EL 0 el') ∧ el ≠ [] ∧ well_formed ope el ⇒ find (Prim ope el) c ds (Prim ope el')) ∧
+  (∀c el el' ope ds fdc fd.
+      LIST_REL (λe e'. ∃ds2 fd2. find e c fdc ds2 e' fd2) el el'
+      ∧ find (EL 0 el) c fdc ds (EL 0 el') fd ∧ el ≠ [] ∧ well_formed ope el
+      ⇒ find (Prim ope el) c fdc ds (Prim ope el') NONE) ∧
 [find_Prim_Fail:]
-  (∀c el ope.
-     ¬ (well_written ope el) ⇒ find (Prim ope el) c {} Fail) ∧
+  (∀c el ope fdc.
+     ¬ (well_written ope el) ⇒ find (Prim ope el) c fdc {} Fail NONE) ∧
 [find_Proj:]
-  (∀e e' n i c ds.
-     find e c ds e' ⇒ find (Proj n i e) c ds (Proj n i e')) ∧
+  (∀e e' n i c ds fdc fd.
+     find e c fdc ds e' fd ⇒ find (Proj n i e) c fdc ds (Proj n i e') NONE) ∧
 [find_IsEq:]
-  (∀e e' n i c ds.
-     find e c ds e' ⇒ find (IsEq n i e) c ds (IsEq n i e')) ∧
+  (∀e e' n i c ds fdc fd.
+     find e c fdc ds e' fd ⇒ find (IsEq n i e) c fdc ds (IsEq n i e') NONE) ∧
 [find_Atom:]
-  (∀el dsl el' c op.
+  (∀el dsl el' fdc c op fd.
      LENGTH dsl = LENGTH el' ∧
-     LIST_REL (λe (ds, e'). find e c ds e') el (ZIP (dsl, el')) ⇒
-     find (Prim (AtomOp op) el) c (BIGUNION (set dsl)) (Prim (AtomOp op) el')) ∧
+     LIST_REL (λe (ds, e'). find e c fdc ds e' fd) el (ZIP (dsl, el')) ⇒
+     find (Prim (AtomOp op) el) c fdc (BIGUNION (set dsl)) (Prim (AtomOp op) el') NONE) ∧
 [find_Subset:]
-  (∀e e' c ds ds'.
-     find e c ds e' ∧ (∀ps v. (ps, v) ∈ ds' ⇒ ∃ps'. (ps++ps', v) ∈ ds) ⇒ find e c ds' e') ∧
+  (∀e e' c ds ds' fdc fd.
+     find e c fdc ds e' fd ∧ (∀ps v. (ps, v) ∈ ds' ⇒ ∃ps'. (ps++ps', v) ∈ ds) ⇒ find e c fdc ds' e' fd) ∧
 [find_Let:]
-  (∀e e' e2 e2' ds ds' c v.
-     find e c ds e' ∧ find e2 (Bind v e c) ds' e2'
+  (∀e e' e2 e2' ds ds' c v fdc fdc' fd fd'.
+     find e c fdc ds e' fd ∧ find e2 (Bind v e c) fdc' ds' e2' fd'
      ∧ (∀ps. (ps, v) ∉ ds')
-     ⇒ find (Let v e e2) c ds' (Let v e' e2')) ∧
+     ∧ (∀n argDemands. (n, argDemands) ∈ fdc' ⇒ n ≠ v ∧ (n, argDemands) ∈ fdc)
+     ⇒ find (Let v e e2) c fdc ds' (Let v e' e2') NONE) ∧
 [find_Let2:]
-  (∀ e e' e2 e2' ds ds' ds'' c v ps.
-     find e c ds e' ∧ find e2 (Bind v e c) ds' e2'
+  (∀ e e' e2 e2' ds ds' ds'' c v ps fdc fdc' fd fd'.
+     find e c fdc ds e' fd ∧ find e2 (Bind v e c) fdc' ds' e2' fd'
      ∧ (ps,v) ∈ ds'
      ∧ (∀ps' v'. (ps', v') ∈ ds'' ⇒ ((ps', v') ∈ ds' ∧ v' ≠ v) ∨ (ps', v') ∈ ds)
-     ⇒ find (Let v e e2) c ds'' (Let v e' e2')) ∧
+     ∧ (∀n argDemands. (n, argDemands) ∈ fdc' ⇒ n ≠ v ∧ (n, argDemands) ∈ fdc)
+     ⇒ find (Let v e e2) c fdc ds'' (Let v e' e2') NONE) ∧
 [find_Lam:]
-  (∀e e' c ds v.
-     find e (IsFree v c) ds e' ⇒ find (Lam v e) c {} (Lam v e')) ∧
+  (∀e e' c ds v fdc fd.
+     find e (IsFree v c) fdc ds e' fd ∧ (∀argDs. (v, argDs) ∉ fdc)
+     ⇒ find (Lam v e) c fdc {} (Lam v e') NONE) ∧
 [find_Lams:]
-  (∀e e' c ds vl.
-     find e (FOLDL (λc n. IsFree n c) c vl) ds e' ⇒ find (Lams vl e) c {} (Lams vl e')) ∧
+  (∀e e' c ds vl fdc fd.
+     find e (FOLDL (λc n. IsFree n c) c vl) fdc ds e' fd
+     ∧ EVERY (λv. ∀argDs. (v, argDs) ∉ fdc) vl
+     ⇒ find (Lams vl e) c fdc {} (Lams vl e') NONR ) ∧
 [find_Eq:]
-  (∀e e' c. e ≈ e' ⇒ find e c {} e') ∧
+  (∀e e' c fdc. exp_eq_in_ctxt c e e' ⇒ find e c fdc {} e' NONE) ∧
 [find_Letrec:]
-  (∀e e' ds c b b'. LIST_REL (λ(n1, e1) (n2, e2). n1 = n2 ∧ e1 ≈ e2) b b' ∧ find e (RecBind b c) ds e' ⇒ find (Letrec b e) c {} (Letrec b e'))
+  (∀e e' ds c b b' fdc fd.
+     LIST_REL (λ(n1, e1) (n2, e2). n1 = n2 ∧ e1 ≈ e2) b b'
+     ∧ find e (RecBind b c) fdc ds e' fd
+     ∧ EVERY (λv. ∀argDs. (v, argDs) ∉ fdc) (MAP FST b)
+     ⇒ find (Letrec b e) c fdc {} (Letrec b e') fd)
 End
-
-Theorem exp_eq_in_ctxt_refl:
-  ∀c e. exp_eq_in_ctxt c e e
-Proof
-  Induct
-  \\ gvs [exp_eq_in_ctxt_def, exp_eq_refl]
-QED
-
-Theorem exp_eq_in_ctxt_sym:
-  ∀c e1 e2. exp_eq_in_ctxt c e1 e2 ⇔ exp_eq_in_ctxt c e2 e1
-Proof
-  Induct
-  \\ rw [] \\ eq_tac
-  \\ gvs [exp_eq_in_ctxt_def, exp_eq_sym]
-QED
-
-Theorem exp_eq_in_ctxt_trans:
-  ∀c e1 e2 e3. exp_eq_in_ctxt c e1 e2 ∧ exp_eq_in_ctxt c e2 e3 ⇒ exp_eq_in_ctxt c e1 e3
-Proof
-  Induct
-  \\ rw []
-  \\ gvs [exp_eq_in_ctxt_def]
-  >- (irule exp_eq_trans
-      \\ pop_assum $ irule_at Any \\ fs [])
-  \\ rw []
-  \\ last_x_assum irule
-  \\ first_x_assum $ irule_at Any
-  \\ gvs []
-QED
-
-Theorem exp_eq_IMP_exp_eq_in_ctxt:
-  ∀c e e'. e ≈ e' ⇒ exp_eq_in_ctxt c e e'
-Proof
-  Induct
-  \\ gvs [exp_eq_in_ctxt_def]
-  \\ rw []
-  \\ first_x_assum irule
-  \\ gvs [exp_eq_Letrec_cong, exp_eq_App_cong, exp_eq_Lam_cong, exp_eq_refl, exp_eq_l_refl]
-QED
-
-Theorem eval_Prim:
-  ∀ope eL eL'. LIST_REL (λe1 e2. eval e1 = eval e2) eL eL' ⇒ eval (Prim ope eL) = eval (Prim ope eL')
-Proof
-  Cases
-  \\ rw [eval_thm]
-  >~[‘MAP _ _ = MAP _ _’]
-  >- (irule LIST_EQ
-      \\ gvs [LIST_REL_EL_EQN, EL_MAP])
-  >~[‘AtomOp’]
-  >- (fs [eval_def]
-      \\ once_rewrite_tac [v_unfold]
-      \\ fs [eval_wh_Prim]
-      \\ qsuff_tac ‘get_atoms (MAP eval_wh eL') = get_atoms (MAP eval_wh eL)’
-      >- (CASE_TAC \\ fs [])
-      \\ fs [get_atoms_def]
-      \\ qsuff_tac ‘EXISTS error_Atom (MAP eval_wh eL) ⇔ EXISTS error_Atom (MAP eval_wh eL')’
-      >- (strip_tac
-          \\ IF_CASES_TAC
-          \\ simp []
-          \\ qsuff_tac ‘MEM wh_Diverge (MAP eval_wh eL) ⇔ MEM wh_Diverge (MAP eval_wh eL')’
-          >- (strip_tac
-              \\ IF_CASES_TAC
-              \\ simp []
-              \\ irule LIST_EQ
-              \\ rw []
-              \\ gvs [LIST_REL_EL_EQN, EL_MAP, EVERY_EL]
-              \\ rpt $ first_x_assum drule
-              \\ once_rewrite_tac [v_unfold]
-              \\ rpt FULL_CASE_TAC
-              \\ rw [dest_Atom_def, error_Atom_def])
-          \\ eq_tac
-          \\ strip_tac
-          \\ gvs [MEM_EL, LIST_REL_EL_EQN]
-          \\ first_assum $ irule_at Any
-          \\ first_assum drule
-          \\ once_rewrite_tac [v_unfold]
-          \\ rpt FULL_CASE_TAC
-          \\ gvs [EL_MAP])
-      \\ eq_tac
-      \\ strip_tac
-      \\ gvs [EXISTS_MEM, MEM_EL, EL_MAP, LIST_REL_EL_EQN]
-      \\ rename1 ‘MAP eval_wh eL2’
-      \\ qexists_tac ‘eval_wh (EL n eL2)’
-      \\ first_x_assum drule
-      \\ once_rewrite_tac [v_unfold]
-      \\ rpt FULL_CASE_TAC
-      \\ fs [error_Atom_def]
-      \\ rw []
-      \\ first_assum $ irule_at Any
-      \\ fs [EL_MAP])
-  \\ Cases_on ‘eL’ \\ Cases_on ‘eL'’ \\ fs []
-  \\ rename1 ‘LIST_REL _ t1 t2’
-  \\ Cases_on ‘t1’ \\ Cases_on ‘t2’ \\ gvs [eval_thm]
-  >~[‘Prim Seq (_::_::_)’]
-  >- (rename1 ‘LIST_REL _ t1 t2’
-      \\ Cases_on ‘t1’ \\ Cases_on ‘t2’
-      \\ gvs [eval_thm, eval_def]
-      \\ once_rewrite_tac [v_unfold]
-      \\ fs [eval_wh_Prim])
-  >~[‘Prim If (_::_::_)’]
-  >- (rename1 ‘LIST_REL _ t1 t2’
-      \\ Cases_on ‘t1’ \\ Cases_on ‘t2’ \\ gvs []
-      >~[‘_::_::_::_’]
-      >- (rename1 ‘LIST_REL _ t1 t2’
-          \\ Cases_on ‘t1’ \\ Cases_on ‘t2’
-          \\ gvs [eval_thm, eval_def]
-          \\ once_rewrite_tac [v_unfold]
-          \\ rw [eval_wh_Prim])
-      \\ rw [eval_def]
-      \\ once_rewrite_tac [v_unfold]
-      \\ rw [eval_wh_Prim])
-  \\ rw [eval_def]
-  \\ once_rewrite_tac [v_unfold]
-  \\ rw [eval_wh_Prim]
-QED
-
-Theorem FLOOKUP_LUPDATE:
-  ∀l f n v. FLOOKUP (f |++ l) n = SOME v ⇒ MEM (n, v) l ∨ FLOOKUP f n = SOME v
-Proof
-  Induct
-  \\ fs [FUPDATE_LIST_THM]
-  \\ PairCases \\ rw []
-  \\ first_x_assum $ dxrule_then assume_tac
-  \\ gvs [FLOOKUP_UPDATE]
-  \\ FULL_CASE_TAC \\ fs []
-QED
-
-Theorem Letrec_Prim:
-  ∀l ope eL b. (Letrec l (Prim ope eL) ≅? Prim ope (MAP (Letrec l) eL)) b
-Proof
-  rw []
-  \\ irule eval_IMP_exp_eq
-  \\ rw [subst_def, eval_thm, subst_funs_def, bind_def]
-  >- (irule eval_Prim
-      \\ rw [LIST_REL_EL_EQN, EL_MAP, subst_def, eval_thm, subst_funs_def]
-      \\ gvs [bind_def]
-      \\ IF_CASES_TAC \\ fs []
-      \\ first_x_assum dxrule
-      \\ strip_tac
-      \\ fs [])
-  \\ fs [MAP_MAP_o]
-  \\ dxrule_then assume_tac FLOOKUP_LUPDATE
-  \\ gvs [FLOOKUP_EMPTY, MEM_EL, EL_MAP]
-  \\ qsuff_tac ‘F’ \\ fs []
-  \\ first_x_assum irule
-  \\ rename1 ‘EL k l’
-  \\ qabbrev_tac ‘p = EL k l’
-  \\ PairCases_on ‘p’
-  \\ gvs [EVERY_EL, EL_MAP]
-  \\ rw []
-  \\ rename1 ‘EL k2 l’
-  \\ qabbrev_tac ‘p' = EL k2 l’
-  \\ PairCases_on ‘p'’
-  \\ gvs []
-  \\ ‘∀v. v ∈ FRANGE (FDIFF f (set (MAP FST l))) ⇒ closed v’
-    by (rw []
-        \\ first_x_assum irule
-        \\ gvs [FRANGE_FLOOKUP, FLOOKUP_FDIFF]
-        \\ pop_assum $ irule_at Any)
-  \\ gvs [freevars_subst, SUBSET_DEF, IN_DIFF, FDOM_FDIFF]
-  \\ rw [MEM_EL]
-  >>~[‘EL _ (MAP FST _) = EL _ (MAP FST _)’]
-  >- (first_assum $ irule_at Any
-      \\ gvs [EL_MAP]
-      \\ rename1 ‘FST p = FST _’
-      \\ PairCases_on ‘p’
-      \\ fs [])
-  >- (first_assum $ irule_at Any
-      \\ gvs [EL_MAP]
-      \\ rename1 ‘FST p = FST _’
-      \\ PairCases_on ‘p’
-      \\ fs [])
-  \\ first_x_assum $ qspecl_then [‘x’] assume_tac
-  \\ pop_assum kall_tac
-  \\ first_x_assum $ qspecl_then [‘x’] assume_tac
-  \\ gvs [] >>~[‘MEM x (MAP FST l)’]
-  >- (gvs [MEM_EL]
-      \\ first_assum $ irule_at Any
-      \\ fs [EL_MAP]
-      \\ rename1 ‘FST p = FST _’
-      \\ PairCases_on ‘p’ \\ fs [])
-  >- (gvs [MEM_EL]
-      \\ first_assum $ irule_at Any
-      \\ fs [EL_MAP]
-      \\ rename1 ‘FST p = FST _’
-      \\ PairCases_on ‘p’ \\ fs [])
-  \\ first_x_assum $ qspecl_then [‘freevars p'1’] assume_tac
-  \\ gvs [MEM_MAP]
-  \\ pop_assum $ qspecl_then [‘EL k2 l’] assume_tac
-  \\ gvs [EL_MEM]
-QED
-
-Theorem exp_eq_in_ctxt_Prim:
-  ∀c eL eL' ope. LIST_REL (exp_eq_in_ctxt c) eL eL' ⇒ exp_eq_in_ctxt c (Prim ope eL) (Prim ope eL')
-Proof
-  Induct
-  \\ gvs [exp_eq_in_ctxt_def, exp_eq_refl, exp_eq_Prim_cong]
-  \\ rw []
-  \\ irule exp_eq_in_ctxt_trans
-  \\ irule_at Any exp_eq_in_ctxt_trans
-  \\ last_x_assum $ irule_at Any
-  \\ irule_at (Pos last) exp_eq_IMP_exp_eq_in_ctxt
-  \\ irule_at (Pos last) exp_eq_IMP_exp_eq_in_ctxt
-  >~[‘Letrec’]
-  >- (irule_at Any Letrec_Prim
-      \\ irule_at Any $ iffLR exp_eq_sym
-      \\ irule_at Any Letrec_Prim
-      \\ gvs [LIST_REL_EL_EQN, EL_MAP, exp_eq_in_ctxt_def])
-  \\ irule_at Any Let_Prim
-  \\ irule_at Any $ iffLR exp_eq_sym
-  \\ irule_at Any Let_Prim
-  \\ gvs [LIST_REL_EL_EQN, EL_MAP, exp_eq_in_ctxt_def]
-QED
-
-(*
-Theorem freevars_subst1_Let:
-  ∀e n s e1 e2. closed e1 ⇒ freevars (subst1 n (Let s e1 e2) e) = freevars (subst1 n (subst1 s e1 e2) e)
-Proof
-  Induct using freevars_ind
-  \\ rw [subst1_def]
-  >- gvs [freevars_subst1, closed_def]
-  >- (AP_TERM_TAC
-      \\ AP_TERM_TAC
-      \\ irule LIST_EQ
-      \\ rw [EL_MAP]
-      \\ first_x_assum irule
-      \\ fs [EL_MEM])
-  \\ qsuff_tac ‘MAP (FST o (λ(g, z). (g, subst1 n (Let s e1 e2) z))) lcs
-                = MAP (FST o (λ(g, z). (g, subst1 n (subst1 s e1 e2) z))) lcs’
-  >- (rw [MAP_MAP_o]
-      \\ AP_THM_TAC
-      \\ AP_TERM_TAC
-      \\ AP_TERM_TAC
-      \\ AP_TERM_TAC
-      \\ AP_TERM_TAC
-      \\ irule LIST_EQ
-      \\ rw [EL_MAP]
-      \\ rename1 ‘EL k lcs’
-      \\ qabbrev_tac ‘p = EL k lcs’
-      \\ PairCases_on ‘p’
-      \\ fs []
-      \\ first_x_assum irule
-      \\ drule EL_MEM
-      \\ rw []
-      \\ pop_assum $ irule_at Any)
-  \\ irule LIST_EQ
-  \\ rw [EL_MAP]
-  \\ rename1 ‘FST (_ p)’
-  \\ PairCases_on ‘p’
-  \\ fs []
-QED
-
-Theorem subst1_is_Let:
-  ∀e n s e1 e2. closed e1 ⇒ eval (subst1 n (Let s e1 e2) e) = eval (subst1 n (subst1 s e1 e2) e)
-Proof
-  Induct using freevars_ind
-  \\ rw [subst1_def, eval_thm, bind1_def]
-  >- (irule eval_Prim
-      \\ rw [LIST_REL_EL_EQN, EL_MAP]
-      \\ first_x_assum $ irule
-      \\ fs [EL_MEM])
-  >- (TOP_CASE_TAC
-      \\ rename1 ‘dest_Closure _ = SOME x’
-      \\ PairCases_on ‘x’
-      \\ gvs []
-      \\ IF_CASES_TAC
-      \\ gvs [closed_def, freevars_subst1_Let]
-      \\ pop_assum kall_tac
-      \\ first_x_assum $ dxrule_then assume_tac
-      \\ pop_assum $ qspecl_then [‘n’, ‘s’, ‘e2’] assume_tac
-      \\ rw []
-      \\ AP_TERM_TAC \\ AP_TERM_TAC
-      \\ cheat)
-  \\ cheat
-QED
-
-Theorem Let_App:
-  ∀e1 s e e2. Let s e (App e1 e2) ≈ App (Let s e e1) (Let s e e2)
-Proof
-  rw []
-  \\ irule eval_wh_IMP_exp_eq
-  \\ rw []
-  \\ ‘∀v. v ∈ FRANGE f ⇒ closed v’
-    by (rw []
-        \\ first_x_assum irule
-        \\ fs [FRANGE_FLOOKUP]
-        \\ first_x_assum $ irule_at Any)
-  \\ dxrule_then assume_tac IMP_closed_subst
-  \\ gvs [subst_def, bind1_def, eval_wh_thm]
-  \\ TOP_CASE_TAC \\ fs []
-  \\ rename1 ‘eval_wh (subst1 s (subst f e3) (subst (f \\ s) e1))’
-  \\ Cases_on ‘eval_wh (subst1 s (subst f e3) (subst (f \\ s) e1))’
-  \\ gvs [dest_Closure_def]
-  \\ ‘closed (subst f e3)’
-    by (irule IMP_closed_subst
-            \\ rw []
-        \\ first_x_assum irule
-        \\ fs [FRANGE_FLOOKUP]
-        \\ pop_assum $ irule_at Any)
-  \\ rename1 ‘subst (f \\ s) e2’
-  \\ ‘closed (subst1 s (subst f e3) (subst (f \\ s) e2)) ⇔ freevars (subst (f \\ s) e2) ⊆ {s}’
-    by (drule_then assume_tac closed_freevars_subst1
-        \\ dxrule_then assume_tac closed_subst1_freevars
-        \\ eq_tac \\ strip_tac \\ gvs [])
-  \\ IF_CASES_TAC \\ fs []
-  \\ cheat
-QED*)
-
-Theorem exp_eq_in_ctxt_App:
-  ∀c f1 f2 e1 e2. exp_eq_in_ctxt c f1 f2 ∧ exp_eq_in_ctxt c e1 e2
-                  ⇒ exp_eq_in_ctxt c (App f1 e1) (App f2 e2)
-Proof
-  Induct
-  \\ gvs [exp_eq_in_ctxt_def,exp_eq_App_cong]
-  \\ rw []
-  \\ irule exp_eq_in_ctxt_trans
-  \\ irule_at Any exp_eq_in_ctxt_trans
-  \\ last_x_assum $ irule_at (Pos $ el 2)
-  \\ first_x_assum $ irule_at (Pos $ el 2)
-  \\ rpt $ last_assum $ irule_at Any
-  \\ gvs [exp_eq_IMP_exp_eq_in_ctxt, Let_App, Letrec_App, exp_eq_sym]
-QED
-
-Theorem exp_eq_in_ctxt_Apps:
-  ∀eL eL' e e' c. LIST_REL (exp_eq_in_ctxt c) eL eL' ⇒ exp_eq_in_ctxt c e e'
-                  ⇒ exp_eq_in_ctxt c (Apps e eL) (Apps e' eL')
-Proof
-  Induct
-  >- (Cases
-      \\ fs [Apps_def])
-  \\ gen_tac
-  \\ Cases
-  \\ rw [Apps_def]
-  \\ first_x_assum irule
-  \\ fs [exp_eq_in_ctxt_App]
-QED
-
-Theorem Let_Lam:
-  ∀v w e1 e2 b. closed e1 ∧ v ≠ w ⇒ (Let v e1 (Lam w e2) ≅? Lam w (Let v e1 e2)) b
-Proof
-  rw []
-  \\ irule exp_eq_trans
-  \\ irule_at Any beta_equality
-  \\ gvs [subst1_def]
-  \\ irule exp_eq_Lam_cong
-  \\ irule $ iffLR exp_eq_sym
-  \\ irule beta_equality
-  \\ gvs []
-QED
-
-Theorem Let_freevars:
-  ∀c v e e'. v ∉ freevars e' ⇒ exp_eq_in_ctxt c (Let v e e') e'
-Proof
-  rw []
-  \\ irule exp_eq_IMP_exp_eq_in_ctxt
-  \\ irule eval_wh_IMP_exp_eq
-  \\ rw [subst_def, eval_wh_thm, bind1_def, GSYM subst_fdomsub]
-  >- (AP_TERM_TAC
-      \\ irule subst1_ignore
-      \\ rename1 ‘subst f e2’
-      \\ qsuff_tac ‘closed (subst f e2)’
-      >- rw [closed_def]
-      \\ irule IMP_closed_subst
-      \\ rw []
-      \\ first_x_assum $ irule_at Any
-      \\ fs [FRANGE_FLOOKUP]
-      \\ pop_assum $ irule_at Any)
-  \\ gvs [IMP_closed_subst, FRANGE_FLOOKUP]
-QED
-
-Theorem Let_App_in_ctxt:
-  ∀c s e1 e2 e3. exp_eq_in_ctxt c (Let s e1 (App e2 e3)) (App (Let s e1 e2) (Let s e1 e3))
-Proof
-  rpt gen_tac
-  \\ irule exp_eq_IMP_exp_eq_in_ctxt
-  \\ gvs [Let_App]
-QED
-
-Theorem Let_Lam_weak:
-  ∀v w e1 e2 b. v ≠ w ⇒ w ∉ freevars e1 ⇒ (Let v e1 (Lam w e2) ≅? Lam w (Let v e1 e2)) b
-Proof
-  rw [exp_eq_def, bind_def] >> IF_CASES_TAC >>
-  gvs [app_bisimilarity_eq, exp_eq_refl] >>
-  rpt (irule_at Any IMP_closed_subst) >>
-  drule_then assume_tac $ GSYM subst_fdomsub >>
-  gvs [subst_def, DOMSUB_COMMUTES] >>
-  irule_at Any Let_Lam >>
-  irule_at Any IMP_closed_subst >>
-  rw [FRANGE_FLOOKUP]
-QED
-
-Theorem Let_Let:
-  ∀v w e1 e2 e3 b. v ≠ w ∧ v ∉ freevars e2 ∧ w ∉ freevars e1 ⇒
-                   (Let v e1 (Let w e2 e3) ≅? Let w e2 (Let v e1 e3)) b
-Proof
-  rw []
-  \\ irule eval_IMP_exp_eq
-  \\ rw [subst_def]
-  \\ rename1 ‘subst (f \\ _ \\ _)’
-  \\ ‘∀v. v ∈ FRANGE f ⇒ closed v’ by (rw [FRANGE_FLOOKUP])
-  \\ drule $ GSYM subst_fdomsub
-  \\ last_x_assum assume_tac
-  \\ last_x_assum assume_tac
-  \\ drule $ GSYM subst_fdomsub
-  \\ rw [eval_Let, subst_def, bind1_def, IMP_closed_subst, DOMSUB_COMMUTES]
-  \\ AP_TERM_TAC
-  \\ rw [fmap_domsub, COMPL_UNION]
-  \\ irule subst1_subst1
-  \\ gvs [IMP_closed_subst]
-QED
-        
-Theorem Let_Let_in_ctxt:
-  ∀v w e1 e2 e3 c. v ≠ w ∧ v ∉ freevars e2 ∧ w ∉ freevars e1 ⇒
-                   exp_eq_in_ctxt c (Let v e1 (Let w e2 e3)) (Let w e2 (Let v e1 e3))
-Proof
-  rw []
-  \\ irule exp_eq_IMP_exp_eq_in_ctxt
-  \\ gvs [Let_Let]
-QED
-
-Theorem exp_eq_in_ctxt_Lam:
-  ∀c s e1 e2. exp_eq_in_ctxt (IsFree s c) e1 e2
-              ⇒ exp_eq_in_ctxt c (Lam s e1) (Lam s e2)
-Proof
-  Induct
-  \\ fs[exp_eq_in_ctxt_def] \\ rw [exp_eq_in_ctxt_def]
-  >- (rw [exp_eq_Lam_strong]
-      \\ first_x_assum $ drule_then assume_tac
-      \\ irule exp_eq_trans
-      \\ irule_at Any beta_equality
-      \\ fs []
-      \\ irule $ iffLR exp_eq_sym
-      \\ irule exp_eq_trans
-      \\ irule_at (Pos last) beta_equality
-      \\ fs [exp_eq_sym])
-  >>~ [‘Letrec l (Lam s _)’]
-  >- (irule exp_eq_in_ctxt_trans
-      \\ cheat
-      )
-  \\ rename1 ‘Let v e3 (Lam w _)’
-  \\ ‘∃s. s ∉ {v} ∪ {w} ∪ freevars e3 ∪ freevars e1 ∪ freevars e2’
-    by (‘INFINITE 𝕌(:string)’ by simp []
-        \\ gvs [NOT_IN_FINITE])
-  \\ irule exp_eq_in_ctxt_trans
-  \\ irule_at (Pos hd) exp_eq_IMP_exp_eq_in_ctxt
-  \\ irule_at Any exp_eq_App_cong \\ irule_at Any exp_eq_Lam_cong
-  \\ irule_at Any exp_alpha_exp_eq
-  \\ irule_at Any exp_alpha_Alpha
-  \\ fs [] \\ first_assum $ irule_at Any
-  \\ irule_at Any exp_eq_refl \\ fs []
-  \\ irule exp_eq_in_ctxt_trans
-  \\ irule_at (Pos hd) exp_eq_IMP_exp_eq_in_ctxt
-  \\ irule_at Any Let_Lam_weak \\ fs []
-  \\ irule exp_eq_in_ctxt_trans
-  \\ irule_at (Pos last) exp_eq_IMP_exp_eq_in_ctxt
-  \\ irule_at Any $ iffLR exp_eq_sym
-  \\ irule_at Any exp_eq_App_cong \\ irule_at Any exp_eq_Lam_cong
-  \\ irule_at Any exp_alpha_exp_eq
-  \\ irule_at Any exp_alpha_Alpha
-  \\ first_assum $ irule_at Any
-  \\ irule_at Any exp_eq_refl \\ fs []
-  \\ irule exp_eq_in_ctxt_trans
-  \\ irule_at (Pos last) exp_eq_IMP_exp_eq_in_ctxt
-  \\ irule_at Any $ iffLR exp_eq_sym
-  \\ irule_at Any Let_Lam_weak \\ fs []
-  \\ last_x_assum $ irule_at Any
-  \\ rw []
-  \\ irule exp_eq_in_ctxt_trans \\ irule_at Any exp_eq_in_ctxt_trans
-  \\ last_x_assum $ irule_at Any
-  \\ first_assum $ irule_at (Pos hd)
-  \\ rpt $ irule_at Any exp_eq_IMP_exp_eq_in_ctxt
-  \\ TRY $ last_assum $ irule_at Any
-  \\ irule_at (Pos last) $ iffLR exp_eq_sym
-  \\ conj_tac
-  \\ irule exp_eq_trans
-  \\ irule_at (Pos last) Let_Let
-  \\ gvs [closed_def]
-  \\ irule exp_eq_App_cong \\ fs [exp_eq_refl]
-  \\ irule exp_eq_Lam_cong
-  \\ irule exp_eq_App_cong \\ fs [exp_eq_refl]
-  \\ irule exp_alpha_exp_eq
-  \\ irule exp_alpha_Alpha
-  \\ fs []
-QED
-
-Theorem exp_eq_in_ctxt_Lams:
-  ∀vl c e e'. exp_eq_in_ctxt (FOLDL (λc n. IsFree n c) c vl) e e' ⇒
-              exp_eq_in_ctxt c (Lams vl e) (Lams vl e')
-Proof
-  Induct
-  \\ rw [Lams_def]
-  \\ irule exp_eq_in_ctxt_Lam
-  \\ last_x_assum $ irule_at Any
-  \\ fs []
-QED
 
 fun apply_to_first_n 0 tac = ALL_TAC
   | apply_to_first_n n tac = apply_to_first_n (n-1) tac >- tac;
 
 Theorem find_soundness_lemma:
-  ∀e c ds e'. find e c ds e'  ⇒
-                exp_eq_in_ctxt c e e' ∧
-                (∀d. d ∈ ds ⇒ e demands d)
+  ∀e c fdc ds e' fd. find e c fdc ds e' fd
+          ⇒ (∀n l i. (n, l) ∈ fdc ∧ i < LENGTH l ∧ EL i l ⇒ (Var n) fdemands_in_ctxt (([], i), LENGTH l, c))
+          ⇒ exp_eq_in_ctxt c e e' ∧ (∀d. d ∈ ds ⇒ e demands_in_ctxt (d, c))
+            ∧ (∀argDs ds2. fd = SOME (argDs, ds2)
+                          ⇒ (∀i. i < LENGTH argDs ∧ EL i argDs ⇒ e' fdemands_in_ctxt (([], i), LENGTH argDs, c))
+                            ∧ ∀eL d2. LENGTH eL = LENGTH argDs ∧ d2 ∈ ds2 ⇒ (Apps e' eL) demands_in_ctxt (d2, c))
+
 Proof
   Induct_on ‘find’
   \\ rpt conj_tac
@@ -2387,13 +1696,16 @@ Proof
       \\ fs []
       \\ first_x_assum $ drule
       \\ rw []
-      \\ dxrule_then assume_tac demands_empty_proj
-      \\ fs [demands_def, Projs_def]
-      \\ irule exp_eq_in_ctxt_trans
-      \\ irule_at Any exp_eq_IMP_exp_eq_in_ctxt
-      \\ first_assum $ irule_at Any
-      \\ irule exp_eq_in_ctxt_Prim
-      \\ fs [exp_eq_in_ctxt_refl])
+      >- (dxrule_then assume_tac demands_in_ctxt_empty_proj
+          \\ fs [demands_in_ctxt_def, Projs_def]
+          \\ irule exp_eq_in_ctxt_trans
+          \\ pop_assum $ irule_at Any
+          \\ irule exp_eq_in_ctxt_Prim
+          \\ fs [exp_eq_in_ctxt_refl])
+      >- (first_x_assum $ drule_then assume_tac
+          \\ gvs []
+          \\ cheat)
+      >- cheat)
   >~[‘exp_eq_in_ctxt c (Seq e e2) (Seq e' e2')’] (* find_Seq2 *)
   >- (rw []
       \\ fs [exp_eq_in_ctxt_Prim, demands_Seq, demands_Seq2])
