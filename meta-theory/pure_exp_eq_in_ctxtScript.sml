@@ -282,13 +282,13 @@ Proof
       fs [])
 QED
 
-Theorem Letrec_closed:
-  ∀l e b. closed e ⇒ (Letrec l e ≅? e) b
+Theorem Letrec_not_in_freevars:
+  ∀l e b. EVERY (λv. v ∉ freevars e) (MAP FST l) ⇒ (Letrec l e ≅? e) b
 Proof
   rw [exp_eq_def, bind_def] >> IF_CASES_TAC >>
   gvs [app_bisimilarity_eq, exp_eq_refl] >>
-  irule_at (Pos $ el 2) IMP_closed_subst >>
-  gvs [subst_def, closed_subst, FRANGE_FLOOKUP] >>
+  rpt $ irule_at Any IMP_closed_subst >>
+  gvs [subst_def, FRANGE_FLOOKUP] >>
   irule exp_eq_trans >>
   irule_at Any beta_equality_Letrec >>
   conj_asm1_tac
@@ -309,11 +309,14 @@ Proof
       first_assum $ irule_at Any >> rw [EL_MAP] >>
       rename1 ‘FST p2’ >> PairCases_on ‘p2’ >> fs []) >>
   dxrule_then assume_tac subst_funs_eq_subst >>
-  rw [exp_eq_refl]
+  qspecl_then [‘f’, ‘e’, ‘set (MAP FST l)’] assume_tac $ GSYM subst_FDIFF' >>
+  gvs [EVERY_MEM] >>
+  rw [exp_eq_refl, IMP_closed_subst, FRANGE_FLOOKUP]
 QED
 
 Theorem Let_Letrec:
-  ∀s l e1 e2 b. EVERY (λe. s ∉ freevars e) (MAP SND l) ∧ ¬MEM s (MAP FST l) ∧ closed e1
+  ∀s l e1 e2 b. EVERY (λe. s ∉ freevars e) (MAP SND l) ∧ ¬MEM s (MAP FST l)
+                ∧ EVERY (λv. v ∉ freevars e1) (MAP FST l) 
                 ⇒ (Let s e1 (Letrec l e2) ≅? Letrec l (Let s e1 e2)) b
 Proof
   rw [] >>
@@ -326,7 +329,7 @@ Proof
   irule exp_eq_trans >>
   irule_at Any Letrec_App >>
   irule exp_eq_App_cong >>
-  gvs [exp_eq_refl, Letrec_closed]
+  gvs [exp_eq_refl, Letrec_not_in_freevars]
 QED
 
 Theorem Let_Let:
@@ -360,7 +363,7 @@ End
 
 Definition exp_eq_in_ctxt_def:
   exp_eq_in_ctxt Nil = (λe1 e2. e1 ≈ e2) ∧
-  exp_eq_in_ctxt (IsFree s c) e1 e2 = (∀e3. closed e3 ⇒ exp_eq_in_ctxt c (Let s e3 e1) (Let s e3 e2)) ∧
+  exp_eq_in_ctxt (IsFree s c) e1 e2 = (∀e3. exp_eq_in_ctxt c (Let s e3 e1) (Let s e3 e2)) ∧
   exp_eq_in_ctxt (Bind s e3 c) e1 e2 = exp_eq_in_ctxt c (Let s e3 e1) (Let s e3 e2) ∧
   exp_eq_in_ctxt (RecBind l c) e1 e2 = exp_eq_in_ctxt c (Letrec l e1) (Letrec l e2)
 End
@@ -372,12 +375,19 @@ Definition ctxt_size_def:
   ctxt_size (RecBind sel ctxt) = 1 + exp1_size sel + ctxt_size ctxt
 End
 
-
 Theorem exp_eq_in_ctxt_refl:
   ∀c e. exp_eq_in_ctxt c e e
 Proof
   Induct
   \\ gvs [exp_eq_in_ctxt_def, exp_eq_refl]
+QED
+
+Theorem exp_eq_in_ctxt_l_refl:
+  ∀c l. LIST_REL (exp_eq_in_ctxt c) l l
+Proof
+  gen_tac
+  \\ Induct
+  \\ fs [exp_eq_in_ctxt_refl]
 QED
 
 Theorem exp_eq_in_ctxt_sym:
@@ -434,6 +444,14 @@ Proof
   \\ gvs [LIST_REL_EL_EQN, EL_MAP, exp_eq_in_ctxt_def]
 QED
 
+Theorem Let_App_in_ctxt:
+  ∀c s e1 e2 e3. exp_eq_in_ctxt c (Let s e1 (App e2 e3)) (App (Let s e1 e2) (Let s e1 e3))
+Proof
+  rpt gen_tac
+  \\ irule exp_eq_IMP_exp_eq_in_ctxt
+  \\ gvs [Let_App]
+QED
+
 Theorem exp_eq_in_ctxt_App:
   ∀c f1 f2 e1 e2. exp_eq_in_ctxt c f1 f2 ∧ exp_eq_in_ctxt c e1 e2
                   ⇒ exp_eq_in_ctxt c (App f1 e1) (App f2 e2)
@@ -446,7 +464,9 @@ Proof
   \\ last_x_assum $ irule_at (Pos $ el 2)
   \\ first_x_assum $ irule_at (Pos $ el 2)
   \\ rpt $ last_assum $ irule_at Any
-  \\ gvs [exp_eq_IMP_exp_eq_in_ctxt, Let_App, Letrec_App, exp_eq_sym]
+  \\ irule_at (Pos last) $ iffLR exp_eq_in_ctxt_sym
+  \\ rpt $ irule_at Any Let_App_in_ctxt
+  \\ fs [Letrec_App, exp_eq_IMP_exp_eq_in_ctxt]
 QED
 
 Theorem exp_eq_in_ctxt_Apps:
@@ -461,14 +481,6 @@ Proof
   \\ rw [Apps_def]
   \\ first_x_assum irule
   \\ fs [exp_eq_in_ctxt_App]
-QED
-
-Theorem Let_App_in_ctxt:
-  ∀c s e1 e2 e3. exp_eq_in_ctxt c (Let s e1 (App e2 e3)) (App (Let s e1 e2) (Let s e1 e3))
-Proof
-  rpt gen_tac
-  \\ irule exp_eq_IMP_exp_eq_in_ctxt
-  \\ gvs [Let_App]
 QED
 
 Theorem Let_freevars:
@@ -507,7 +519,6 @@ Proof
   Induct
   \\ fs[exp_eq_in_ctxt_def] \\ rw [exp_eq_in_ctxt_def]
   >- (rw [exp_eq_Lam_strong]
-      \\ first_x_assum $ drule_then assume_tac
       \\ irule exp_eq_trans
       \\ irule_at Any beta_equality
       \\ fs []
@@ -563,8 +574,8 @@ Proof
       \\ irule exp_eq_in_ctxt_trans
       \\ irule_at Any exp_eq_in_ctxt_trans
       \\ last_x_assum $ irule_at Any
-      \\ first_assum $ irule_at Any
       \\ irule_at (Pos last) $ iffLR exp_eq_in_ctxt_sym
+      \\ rename1 ‘Let s e3 _’ \\ qexists_tac ‘e3’
       \\ conj_tac
       \\ irule exp_eq_IMP_exp_eq_in_ctxt
       \\ irule exp_eq_trans
@@ -577,6 +588,7 @@ Proof
       \\ irule_at Any exp_alpha_Alpha
       \\ rw [EVERY_MEM, exp_eq_refl, exp_eq_l_refl]
       \\ rename1 ‘MEM e _’
+      \\ cheat
       \\ last_x_assum $ qspecl_then [‘freevars e’] assume_tac
       \\ fs [MEM_MAP]
       \\ rename1 ‘e = SND pair’ \\ pop_assum $ qspecl_then [‘pair’] assume_tac
@@ -611,17 +623,17 @@ Proof
   \\ rw []
   \\ irule exp_eq_in_ctxt_trans \\ irule_at Any exp_eq_in_ctxt_trans
   \\ last_x_assum $ irule_at Any
-  \\ first_assum $ irule_at (Pos hd)
   \\ rpt $ irule_at Any exp_eq_IMP_exp_eq_in_ctxt
-  \\ TRY $ last_assum $ irule_at Any
   \\ irule_at (Pos last) $ iffLR exp_eq_sym
-  \\ conj_tac
-  \\ irule exp_eq_trans
-  \\ irule_at (Pos last) Let_Let
-  \\ gvs [closed_def]
-  \\ irule exp_eq_App_cong \\ fs [exp_eq_refl]
-  \\ irule exp_eq_Lam_cong
-  \\ irule exp_eq_App_cong \\ fs [exp_eq_refl]
+  \\ irule_at (Pos last) exp_eq_trans \\ irule_at (Pos last) exp_eq_trans
+  \\ irule_at (Pos $ el 2) Let_Let \\ irule_at (Pos last) Let_Let
+  \\ rpt $ irule_at Any exp_eq_App_cong
+  \\ rpt $ irule_at Any exp_eq_refl
+  \\ rpt $ irule_at Any exp_eq_Lam_cong
+  \\ rpt $ irule_at Any exp_eq_App_cong
+  \\ rpt $ irule_at Any exp_eq_refl
+  \\ fs [] \\ conj_tac
+  \\ cheat
   \\ irule exp_alpha_exp_eq
   \\ irule exp_alpha_Alpha
   \\ fs []
@@ -638,4 +650,10 @@ Proof
   \\ fs []
 QED
 
+Theorem exp_eq_in_IsFree_Bind:
+  ∀e1 e2 e3 c v. exp_eq_in_ctxt (IsFree v c) e1 e2 ⇒ exp_eq_in_ctxt (Bind v e3 c) e1 e2
+Proof
+  rw [exp_eq_in_ctxt_def]
+QED
+        
 val _ = export_theory();
