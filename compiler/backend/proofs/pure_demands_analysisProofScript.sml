@@ -23,60 +23,80 @@ Datatype:
 End
 
 Definition adds_demands_def:
-  (adds_demands a0 (m, e) [] = e) ∧
-  (adds_demands a0 (m, e) (name::tl) =
+  (adds_demands a0 (m, e, fd) [] = e) ∧
+  (adds_demands a0 (m, e, fd) (name::tl) =
      case lookup m (implode name) of
-       | SOME () => Prim a0 Seq [Var a0 name; adds_demands a0 (m, e) tl]
-       | _ => adds_demands a0 (m, e) tl)
+       | SOME () => Prim a0 Seq [Var a0 name; adds_demands a0 (m, e, fd) tl]
+       | _ => adds_demands a0 (m, e, fd) tl)
 End
 
 Definition add_all_demands_def:
-  add_all_demands a (m, e) = foldrWithKey (λ id () e. Prim a Seq [Var a (explode id); e] ) e m
+  add_all_demands a (m, e, _) = foldrWithKey (λ id () e. Prim a Seq [Var a (explode id); e] ) e m
+End
+
+Definition boolList_of_fdemands_def:
+  boolList_of_fdemands m vl = MAP (λv. lookup m (mlstring$implode v) = SOME ()) vl
 End
 
 Definition demands_analysis_fun_def:
-  (demands_analysis_fun c ((Var a0 a1): 'a cexp) =
-    (mlmap$insert (mlmap$empty mlstring$compare) (implode a1) (), (Var a0 a1 : 'a cexp))) ∧
-  (demands_analysis_fun c (App a0 f argl) =
-     let (m1, f') = demands_analysis_fun c f in
-       let e' = MAP (λe. add_all_demands a0 (demands_analysis_fun c e)) argl in
-         (m1, App a0 f' e')) ∧
-  (demands_analysis_fun c (Lam a0 vl e) =
-     let e' = add_all_demands a0 (demands_analysis_fun (IsFree vl c) e) in
-       (empty compare, Lam a0 vl e')) ∧
-  (demands_analysis_fun c (Let a0 name e1 e2) =
-     let (m1, e1') = demands_analysis_fun c e1 in
-       let (m2, e2') = demands_analysis_fun (Bind name e1 c) e2 in
-         (empty compare, Let a0 name e1' e2')) ∧
-  (demands_analysis_fun c (Prim a0 Seq [e1; e2]) =
-     let (m1, e1') = demands_analysis_fun c e1 in
-       let (m2, e2') = demands_analysis_fun c e2 in
-         (union m1 m2, Prim a0 Seq [e1'; e2'])) ∧
-  (demands_analysis_fun c (Prim a0 Seq _) =
-   (empty compare, Prim a0 Seq [])) ∧
-  (demands_analysis_fun c (Prim a0 (AtomOp op) el) =
-     let outL = MAP (demands_analysis_fun c) el in
-       let (mL, el') = UNZIP outL in
-         let m = FOLDL union (empty compare) mL in
-           (m, Prim a0 (AtomOp op) el')) ∧
-  (demands_analysis_fun c (Prim a0 (Cons s) el) =
-     let el = MAP (λe. add_all_demands a0 (demands_analysis_fun c e)) el in
-       (empty compare, Prim a0 (Cons s) el)) ∧
-  (demands_analysis_fun c (Letrec a0 binds e) =
-     let e' = add_all_demands a0 (demands_analysis_fun (RecBind binds c) e) in
-       (empty compare, Letrec a0 binds e')) ∧
-  (demands_analysis_fun c (Case a0 e n cases) =
+  (demands_analysis_fun c ((Var a0 a1): 'a cexp) fds =
+     let fd = case lookup fds (implode a1) of
+            | SOME l => SOME (l, mlmap$empty mlstring$compare)
+            | NONE => NONE
+     in
+       (mlmap$insert (mlmap$empty mlstring$compare) (implode a1) (), (Var a0 a1 : 'a cexp), fd)) ∧
+  (demands_analysis_fun c (App a0 (f: 'a cexp) (argl: 'a cexp list)) fds =
+     let (m1, f', fd) = demands_analysis_fun c f fds in
+       let eL' = MAP (λe. demands_analysis_fun c e fds) argl in
+         (case fd of
+           | NONE =>
+                  (let e' = MAP (λe. add_all_demands a0 e) eL' in
+                    (m1, (App (a0: 'a) (f': 'a cexp) (e': 'a cexp list) : 'a cexp), NONE))
+           | SOME (fdL, m2) =>
+                  (let ds = FOLDL2 (λm1 (m2, e, _) b. if b then union m1 m2 else m1) m2 eL' fdL in
+                     let eL3 = MAP (add_all_demands a0) eL' in
+                       if LENGTH fdL ≤ LENGTH argl
+                       then (union m1 ds, App a0 f' eL3, NONE)
+                       else (m1, App a0 f' eL3, NONE)))) ∧
+  (demands_analysis_fun c (Lam a0 vl e) fds =
+     let (m, e', fd) = demands_analysis_fun (IsFree vl c) e (empty compare) in
+       (empty compare, Lam a0 vl e', SOME (boolList_of_fdemands m vl, empty compare))) ∧
+  (demands_analysis_fun c (Let a0 name e1 e2) fds =
+     let (m1, e1', fd1) = demands_analysis_fun c e1 fds in
+       let (m2, e2', fd2) = demands_analysis_fun (Bind name e1 c) e2 (empty compare) in
+         case fd2 of
+           | NONE => (empty compare, Let a0 name e1' e2', NONE)
+           | SOME (fdL, _) => (empty compare, Let a0 name e1' e2', SOME (fdL, empty compare))) ∧
+  (demands_analysis_fun c (Prim a0 Seq [e1; e2]) fds =
+     let (m1, e1', fd1) = demands_analysis_fun c e1 fds in
+       let (m2, e2', fd2) = demands_analysis_fun c e2 fds in
+         (union m1 m2, Prim a0 Seq [e1'; e2'], fd2)) ∧
+  (demands_analysis_fun c (Prim a0 Seq _) fds =
+   (empty compare, Prim a0 Seq [], NONE)) ∧
+  (demands_analysis_fun c (Prim a0 (AtomOp op) el) fds =
+     let outL = MAP (λe. demands_analysis_fun c e fds) el in
+       let (mL, el1) = UNZIP outL in
+         let (el', fdL) = UNZIP el1 in
+           let m = FOLDL union (empty compare) mL in
+             (m, Prim a0 (AtomOp op) (el': 'a cexp list), NONE)) ∧
+  (demands_analysis_fun c (Prim a0 (Cons s) el) fds =
+     let el = MAP (λe. add_all_demands a0 (demands_analysis_fun c e fds)) el in
+       (empty compare, Prim a0 (Cons s) el, NONE)) ∧
+  (demands_analysis_fun c (Letrec a0 binds e) fds =
+     let e' = add_all_demands a0 (demands_analysis_fun (RecBind binds c) e fds) in
+       (empty compare, Letrec a0 binds e', NONE)) ∧
+  (demands_analysis_fun c (Case a0 e n cases) fds =
    if MEM n (FLAT (MAP (FST o SND) cases))
    then
-     (empty compare, Case a0 e n cases)
+     (empty compare, Case a0 e n cases, NONE)
    else
-     let (m, e') = demands_analysis_fun c e in
+     let (m, e', fd) = demands_analysis_fun c e fds in
        let cases' = MAP (λ(name,args,ce). (name, args,
                                            adds_demands a0 (demands_analysis_fun
-                                                (Unfold name n args (Bind n e c)) ce) args)) cases in
-             (empty compare, Case a0 e' n cases'))
+                                                (Unfold name n args (Bind n e c)) ce fds) args)) cases in
+             (empty compare, Case a0 e' n cases', NONE))
 Termination
-  WF_REL_TAC ‘measure $ (cexp_size (K 0)) o SND’ \\ rw []
+  WF_REL_TAC ‘measure $ (cexp_size (K 0)) o (FST o SND)’ \\ rw []
   \\ imp_res_tac cexp_size_lemma
   \\ fs []
 End
@@ -98,9 +118,10 @@ Definition ctxt_trans_def:
 End
 
 Theorem adds_demands_soundness:
-  ∀vl e e' m ds c ds a. map_ok m ∧ find (exp_of e) c (IMAGE (λx. ([],explode x)) (FDOM (to_fmap m))) (exp_of e')
-                      ⇒ find (exp_of e) c (IMAGE (λx. ([],explode x)) (FDOM (to_fmap m)))
-                             (exp_of (adds_demands a (m, e') vl))
+  ∀vl e e' m ds c ds a fds fd fd2.
+    map_ok m ∧ find (exp_of e) c fds (IMAGE (λx. ([],explode x)) (FDOM (to_fmap m))) (exp_of e') fd
+    ⇒ find (exp_of e) c fds (IMAGE (λx. ([],explode x)) (FDOM (to_fmap m)))
+                             (exp_of (adds_demands a (m, e', fd2) vl)) fd
 Proof
   Induct
   \\ rw [adds_demands_def]
@@ -117,11 +138,11 @@ Proof
 QED
 
 Theorem add_all_demands_soundness:
-  ∀m s cmp a e e'.
+  ∀m s cmp a e e' fds fd fd2 c.
     TotOrd cmp ∧
-    find (exp_of e) c (s ∪ IMAGE (λx. ([], explode x)) (FDOM (to_fmap (Map cmp m)))) (exp_of e')
-    ⇒ find (exp_of e) c (s ∪ IMAGE (λx. ([], explode x)) (FDOM (to_fmap (Map cmp m))))
-           (exp_of (add_all_demands a (Map cmp m, e')))
+    find (exp_of e) c fds (s ∪ IMAGE (λx. ([], explode x)) (FDOM (to_fmap (Map cmp m)))) (exp_of e') fd
+    ⇒ find (exp_of e) c fds (s ∪ IMAGE (λx. ([], explode x)) (FDOM (to_fmap (Map cmp m))))
+           (exp_of (add_all_demands a (Map cmp m, e', fd2))) fd
 Proof
   Induct
   \\ fs [add_all_demands_def, foldrWithKey_def, balanced_mapTheory.foldrWithKey_def, to_fmap_def]
@@ -212,20 +233,30 @@ Proof
 QED
 
 Theorem update_ctxt_soundness:
-  ∀l e e' n1 n2 c. find e (update_ctxt n1 n2 c l) {} e' ⇒ find (lets_for n1 n2 l e) c {} (lets_for n1 n2 l e')
+  ∀l e e' n1 n2 c fds fd.
+    EVERY (λv. ∀d. (v, d) ∉ fds) (MAP SND l)
+    ∧ find e (update_ctxt n1 n2 c l) fds {} e' fd
+    ⇒ find (lets_for n1 n2 l e) c fds {} (lets_for n1 n2 l e') NONE
 Proof
   Induct
-  \\ fs [lets_for_def, update_ctxt_def]
+  \\ gvs [lets_for_def, update_ctxt_def]
+  >- (rw [] \\ irule find_Drop_fd \\ pop_assum $ irule_at Any)
   \\ Cases
   \\ rw [lets_for_def, update_ctxt_def]
   \\ irule find_Let
   \\ fs []
   \\ irule_at Any find_Bottom
+  \\ irule_at Any find_Drop_fd
+  \\ last_x_assum $ irule_at Any \\ pop_assum $ irule_at Any
+  \\ gvs []
 QED
 
 Theorem find_rows_of:
-  ∀l l' c s. LIST_REL (λ(a1, b1, e1) (a2, b2, e2). a1 = a2 ∧ b1 = b2 ∧ find e1 (update_ctxt a1 s c (MAPi (λi v. (i, v)) b1)) {} e2) l l'
-         ⇒ find (rows_of s l) c {} (rows_of s l')
+  ∀l l' c s fds fd.
+    LIST_REL (λ(a1, b1, e1) (a2, b2, e2).
+                a1 = a2 ∧ b1 = b2
+                ∧ find e1 (update_ctxt a1 s c (MAPi (λi v. (i, v)) b1)) fds {} e2 fd) l l'
+         ⇒ find (rows_of s l) c fds {} (rows_of s l') NONE
 Proof
   Induct
   \\ fs [rows_of_def, find_Bottom]
@@ -240,7 +271,7 @@ Proof
   \\ first_x_assum $ irule_at Any
   \\ fs []
   \\ irule_at Any update_ctxt_soundness
-  \\ rw []
+  \\ pop_assum $ irule_at Any \\ rw [] \\ pop_assum $ irule_at Any
 QED
 
 Theorem demands_analysis_soundness_lemma:
