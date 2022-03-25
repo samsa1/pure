@@ -1506,10 +1506,19 @@ Proof
   \\ fs [EVERY_EL]
 QED
 
+Definition dest_fd_SND_def:
+  dest_fd_SND NONE = {} ∧
+  dest_fd_SND (SOME (bL, s)) = s
+End
+        
 Inductive find: (* i i i o o o *)
 [find_Drop_fd:]
   (∀e e' c fds ds fd.
-      find e c fds ds e' fd ⇒ find e c fds ds e' NONE) ∧
+     find e c fds ds e' fd ⇒ find e c fds ds e' NONE) ∧
+[find_smaller_fd:]
+  (∀e e' c fds ds bL fd fd'.
+     find e c fds ds e' (SOME (bL, fd)) ∧ fd' ⊆ fd
+     ⇒ find e c fds ds e' (SOME (bL, fd'))) ∧
 [find_Bottom:]
   (∀e (c:ctxt) (fdc : (string # (bool list)) -> bool).
     find e c fdc {} e NONE) ∧
@@ -1556,6 +1565,13 @@ Inductive find: (* i i i o o o *)
   (∀f f' el el' c ds fdc fd.
      LIST_REL (λe e'. ∃ds fd. find e c fdc ds e' fd) el el' ∧
      find f c fdc ds f' fd ⇒ find (Apps f el) c fdc ds (Apps f' el') NONE) ∧
+[find_Apps_fd:]
+  (∀f f' el el' c ds ds' fdc bL fd dsL.
+     LIST_REL (λe (ds, e'). ∃ fd. find e c fdc ds e' fd) el (ZIP (dsL, el'))
+     ∧ LENGTH el' = LENGTH bL ∧ LENGTH dsL = LENGTH el'
+     ∧ find f c fdc ds f' (SOME (bL, fd))
+     ∧ (∀p. p ∈ ds' ⇒ p ∈ ds ∨ ∃i. i < LENGTH bL ∧ p ∈ EL i dsL ∧ EL i bL)
+     ⇒ find (Apps f el) c fdc ds' (Apps f' el') NONE) ∧
 [find_Prim:]
   (∀c el el' ope fdc.
      LENGTH el = LENGTH el' ∧ (∀k. k < LENGTH el ⇒ ∃ds fd. find (EL k el) c fdc ds (EL k el') fd)
@@ -1590,14 +1606,16 @@ Inductive find: (* i i i o o o *)
      find e c fdc ds e' fd ∧ find e2 (Bind v e c) fdc' ds' e2' fd'
      ∧ (∀ps. (ps, v) ∉ ds')
      ∧ (∀n argDemands. (n, argDemands) ∈ fdc' ⇒ (n ≠ v ∧ (n, argDemands) ∈ fdc))
-     ⇒ find (Let v e e2) c fdc ds' (Let v e' e2') NONE) ∧
+     ∧ (∀l. (l, v) ∉ dest_fd_SND fd')
+     ⇒ find (Let v e e2) c fdc ds' (Let v e' e2') fd') ∧
 [find_Let2:]
   (∀ e e' e2 e2' ds ds' ds'' c v ps fdc fdc' fd fd'.
      find e c fdc ds e' fd ∧ find e2 (Bind v e c) fdc' ds' e2' fd'
      ∧ (ps,v) ∈ ds'
      ∧ (∀ps' v'. (ps', v') ∈ ds'' ⇒ ((ps', v') ∈ ds' ∧ v' ≠ v) ∨ (ps', v') ∈ ds)
      ∧ (∀n argDemands. (n, argDemands) ∈ fdc' ⇒ n ≠ v ∧ (n, argDemands) ∈ fdc)
-     ⇒ find (Let v e e2) c fdc ds'' (Let v e' e2') NONE) ∧
+     ∧ (∀l. (l, v) ∉ dest_fd_SND fd')
+     ⇒ find (Let v e e2) c fdc ds'' (Let v e' e2') fd') ∧
 [find_Lam:]
   (∀e e' c ds v fdc fd.
      find e (IsFree v c) fdc ds e' fd ∧ (∀argDs. (v, argDs) ∉ fdc)
@@ -1607,6 +1625,12 @@ Inductive find: (* i i i o o o *)
      find e (FOLDL (λc n. IsFree n c) c vl) fdc ds e' fd
      ∧ EVERY (λv. ∀argDs. (v, argDs) ∉ fdc) vl
      ⇒ find (Lams vl e) c fdc {} (Lams vl e') NONE ) ∧
+[find_Lams_fd:] 
+  (∀e e' c ds vl fdc fd bL1 bL2.
+     find e (FOLDL (λc n. IsFree n c) c vl) fdc ds e' (SOME (bL1, fd))
+     ∧ EVERY (λv. ∀argDs. (v, argDs) ∉ fdc) vl
+     ∧ LIST_REL (λv b. if b then ∃ps. (ps, v) ∈ ds else T) vl bL2
+     ⇒ find (Lams vl e) c fdc {} (Lams vl e') (SOME (bL2 ++ bL1, {}))) ∧
 [find_Eq:]
   (∀e e' c fdc. exp_eq_in_ctxt c e e' ⇒ find e c fdc {} e' NONE) ∧
 [find_Letrec:]
@@ -1768,6 +1792,26 @@ Proof
   fs [Letrec_not_in_freevars, exp_eq_l_refl]
 QED
 
+Theorem fdemands_Let:
+  ∀v e e' c d len. e fdemands (d, len, Bind v e' c) ⇒ Let v e' e fdemands (d, len, c)
+Proof
+  cheat
+QED
+
+Theorem fdemands_exp_eq:
+  ∀d len c e e'. exp_eq_in_ctxt c e e' ∧ e fdemands (d, len, c) ⇒ e' fdemands (d, len, c)
+Proof
+  cheat
+QED
+
+Theorem demands_Apps2:
+  ∀v e e2 eL v d c.
+    (∀eL'. LENGTH eL' = LENGTH eL ⇒ Apps e2 eL' demands (d, Bind v e c)) ∧ v ≠ SND d
+    ⇒ Apps (Let v e e2) eL demands (d, c)
+Proof
+  cheat
+QED
+        
 Theorem find_soundness_lemma:
   ∀e c fdc ds e' fd. find e c fdc ds e' fd
     ⇒ (∀n l i. (n, l) ∈ fdc ∧ i < LENGTH l ∧ EL i l ⇒ (Var n) fdemands (([], i), LENGTH l, c))
@@ -1816,7 +1860,7 @@ Proof
       \\ metis_tac [exp_eq_in_ctxt_sym])
   >~[‘exp_eq_in_ctxt c (App f e) (App f' e')’] (* find_App *)
   >- (rw [] \\ fs [exp_eq_in_ctxt_App, demands_App])
-  >~[‘exp_eq_in_ctxt c (Apps e el') (Apps e' el'')’] (* find_Apps *)
+  >>~[‘exp_eq_in_ctxt c (Apps e el') (Apps e' el'')’] (* find_Apps *)
   >- (rw []
       \\ fs [Apps_demands]
       \\ irule exp_eq_in_ctxt_Apps
@@ -1824,6 +1868,23 @@ Proof
       \\ rename1 ‘n < LENGTH _’
       \\ first_x_assum $ qspecl_then [‘n’] assume_tac
       \\ metis_tac [])
+  >- (rw [] (* find_Apps_fd *)
+      >- (irule exp_eq_in_ctxt_Apps
+          \\ fs [LIST_REL_EL_EQN] \\ rw []
+          \\ rename1 ‘n < LENGTH _’ \\ last_x_assum $ qspecl_then [‘n’] assume_tac
+          \\ gvs [EL_ZIP])
+      \\ first_x_assum $ dxrule_then assume_tac
+      \\ gvs [Apps_demands, LIST_REL_EL_EQN]
+      \\ last_x_assum $ drule_then assume_tac
+      \\ gvs [EL_ZIP, fdemands_def]
+      \\ rename1 ‘Apps _ _ demands (d, _)’ \\ PairCases_on ‘d’
+      \\ once_rewrite_tac [GSYM needs_Var_is_demands]
+      \\ irule needs_trans \\ irule_at (Pos hd) needs_exp_eq
+      \\ irule_at Any exp_eq_in_ctxt_Apps
+      \\ irule_at Any exp_eq_in_ctxt_l_refl
+      \\ last_x_assum $ irule_at Any
+      \\ first_x_assum $ irule_at Any
+      \\ gvs [exp_eq_in_ctxt_sym, needs_Var_is_demands])
   >~[‘exp_eq_in_ctxt c (Proj n i e) (Proj n i e')’] (* find_Proj *)
   >- (strip_tac
       \\ fs [exp_eq_in_ctxt_Prim, demands_Proj])
@@ -1883,10 +1944,21 @@ Proof
       \\ last_x_assum $ dxrule_then assume_tac \\ fs []
       >- (irule exp_eq_in_ctxt_trans \\ first_x_assum $ irule_at Any
           \\ gvs [exp_eq_in_ctxt_App, exp_eq_in_ctxt_refl])
-      \\ rename1 ‘_ demands (d, c)’
-      \\ PairCases_on ‘d’
-      \\ irule demands_Let2
-      \\ ‘d1 = v ∨ d1 ≠ v’ by fs []
+      >~[‘Let _ _ _ demands (d, c)’]
+      >- (PairCases_on ‘d’
+          \\ irule demands_Let2
+          \\ ‘d1 = v ∨ d1 ≠ v’ by fs []
+          \\ gvs [])
+      >~[‘Let _ _ _ fdemands _’]
+      >- (irule fdemands_exp_eq \\ irule_at Any fdemands_Let
+          \\ first_x_assum $ irule_at (Pos hd)
+          \\ gvs [exp_eq_in_ctxt_refl, exp_eq_in_ctxt_App])
+      \\ irule exp_eq_same_demands \\ irule_at Any demands_Apps2
+      \\ irule_at Any exp_eq_in_ctxt_Apps \\ irule_at Any exp_eq_in_ctxt_l_refl
+      \\ irule_at Any exp_eq_in_ctxt_App \\ irule_at (Pos hd) exp_eq_in_ctxt_refl
+      \\ first_assum $ irule_at (Pos hd)
+      \\ rename1 ‘SND d2’ \\ PairCases_on ‘d2’
+      \\ gvs [dest_fd_SND_def] \\ strip_tac
       \\ gvs [])
   >- (rw [exp_eq_in_ctxt_def]
       \\ drule_then assume_tac fdemands_subset
@@ -1904,12 +1976,24 @@ Proof
       >- (irule exp_eq_in_ctxt_trans
           \\ first_x_assum $ irule_at Any
           \\ fs [exp_eq_in_ctxt_App, exp_eq_in_ctxt_refl])
-      \\ rename1 ‘_ demands (d, c)’ \\ PairCases_on ‘d’
+      >~[‘Let _ _ _ fdemands _’]
+      >- (irule fdemands_exp_eq \\ irule_at Any fdemands_Let
+          \\ first_x_assum $ irule_at (Pos hd)
+          \\ gvs [exp_eq_in_ctxt_refl, exp_eq_in_ctxt_App])
+      >~[‘Let _ _ _ demands (d, c)’]
+      >- (rename1 ‘_ demands (d, c)’ \\ PairCases_on ‘d’
       \\ last_x_assum $ dxrule_then assume_tac
       \\ fs [demands_Let2]
       \\ irule demands_Let1
       \\ first_x_assum $ drule_then assume_tac
       \\ dxrule_then assume_tac demands_empty_proj \\ fs [])
+      \\ irule exp_eq_same_demands \\ irule_at Any demands_Apps2
+      \\ irule_at Any exp_eq_in_ctxt_Apps \\ irule_at Any exp_eq_in_ctxt_l_refl
+      \\ irule_at Any exp_eq_in_ctxt_App \\ irule_at (Pos hd) exp_eq_in_ctxt_refl
+      \\ first_assum $ irule_at (Pos hd)
+      \\ rename1 ‘SND d2’ \\ PairCases_on ‘d2’
+      \\ gvs [dest_fd_SND_def] \\ strip_tac
+      \\ gvs [])
   >~[‘SOME (T::argD, ds3)’]
   >- (rw [] \\ gvs [exp_eq_in_ctxt_App, demands_App, fdemands_App]
       >- (irule fdemands_App2 \\ last_assum $ irule_at Any \\ gvs []
@@ -1920,6 +2004,8 @@ Proof
   >~[‘SOME (b::argD, ds3)’]
   >- (rw [] \\ gvs [exp_eq_in_ctxt_App, demands_App, fdemands_App]
       \\ rw [GSYM Apps_def])
+  >~[‘SOME (bL, fd)’]
+  >- (rw [] \\ gvs [SUBSET_DEF])
   >- (rw [] \\ dxrule_then (dxrule_then assume_tac) fdemands_subset (* find_Subset *)
       \\ gvs []
       \\ rename1 ‘e demands (d, c)’ \\ PairCases_on ‘d’
@@ -1934,6 +2020,9 @@ Proof
       \\ gvs [exp_eq_in_ctxt_Lam])
   >- (rw [] \\ dxrule_then (dxrule_then assume_tac) fdemands_set_FOLDL_IsFree
       \\ gvs [exp_eq_in_ctxt_Lams])
+  >- (rw [] \\ dxrule_then (dxrule_then assume_tac) fdemands_set_FOLDL_IsFree
+      \\ gvs [exp_eq_in_ctxt_Lams]
+      \\ cheat)
   >- (rw [] \\ dxrule_then (dxrule_then assume_tac) fdemands_set_RecBind
       \\ gvs [exp_eq_in_ctxt_def])
 QED
