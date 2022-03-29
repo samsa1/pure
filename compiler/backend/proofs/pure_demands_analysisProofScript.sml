@@ -120,7 +120,7 @@ End
 Definition demands_map_to_set_def:
   demands_map_to_set m = IMAGE (λx. (([]: (string # num) list), explode x)) (FDOM (to_fmap m))
 End
-        
+
 Definition fd_to_set_def:
   fd_to_set NONE = NONE ∧
   fd_to_set (SOME (bL, m)) = SOME (bL, demands_map_to_set m)
@@ -157,7 +157,7 @@ Proof
   Induct >> rw [] >>
   rename1 ‘union m2 h’ >>
   last_x_assum $ qspecl_then [‘cmp_of m2’, ‘union m2 h’] assume_tac >>
-  gvs [union_thm, demands_map_union, UNION_ASSOC]         
+  gvs [union_thm, demands_map_union, UNION_ASSOC]
 QED
 
 Theorem FOLDL_union_map_ok:
@@ -252,7 +252,7 @@ Proof
   \\ Cases
   \\ rw [lets_for_def, update_ctxt_def]
   \\ irule find_Let
-  \\ fs []
+  \\ fs [dest_fd_SND_def]
   \\ irule_at Any find_Bottom
   \\ irule_at Any find_Drop_fd
   \\ last_x_assum $ irule_at Any \\ pop_assum $ irule_at Any
@@ -289,7 +289,7 @@ Proof
   eq_tac >> rw [] >> gvs [implode_explode] >>
   pop_assum $ irule_at Any >> gvs [explode_implode]
 QED
-        
+
 Theorem demands_analysis_soundness_lemma:
   ∀(f: α -> num) (e: α cexp) c fds m e' fd.
     demands_analysis_fun c e fds = (m, e', fd) ∧ map_ok fds
@@ -462,11 +462,15 @@ Proof
       \\ qabbrev_tac ‘p = demands_analysis_fun (IsFree namel c) e (empty compare)’
       \\ PairCases_on ‘p’ \\ fs [empty_thm, TotOrd_compare]
       \\ first_x_assum $ drule_then assume_tac
-      \\ gvs [exp_of_def]
-      \\ cheat
-      \\ irule find_Lams
-      \\ irule_at Any add_all_demands_soundness
-      \\ fs [TotOrd_compare, ctxt_trans_def])
+      \\ gvs [exp_of_def, fd_to_set_def, demands_map_empty, ctxt_trans_def, empty_thm, TotOrd_compare]
+      \\ irule find_Subset
+      \\ irule_at Any find_Lams_fd
+      \\ irule_at Any find_Drop_fd
+      \\ first_x_assum $ irule_at Any
+      \\ rw [fdemands_map_to_set_def, empty_thm, TotOrd_compare, LIST_REL_EL_EQN, boolList_of_fdemands_def, EL_MAP]
+      \\ gvs [lookup_thm, FLOOKUP_DEF, demands_map_to_set_def]
+      \\ pop_assum $ irule_at Any
+      \\ gvs [explode_implode])
   >~ [‘Let a vname e2 e1’]
   >- (rw []
       \\ rename1 ‘demands_analysis_fun (Bind _ _ c) _’
@@ -486,23 +490,31 @@ Proof
       \\ irule find_Subset
       \\ rw [exp_of_def, fd_to_set_def]
       \\ Cases_on ‘FLOOKUP (to_fmap p10) (implode vname)’
-      \\ fs [] >>~[‘FLOOKUP _ _ = NONE’]
+      \\ fs [ctxt_trans_def, fd_to_set_def] >>~[‘FLOOKUP _ _ = NONE’]
       >- (irule_at Any find_Let \\ first_x_assum $ irule_at Any
-          \\ fs [ctxt_trans_def] \\ first_x_assum $ irule_at Any
-          \\ gvs [fdemands_map_to_set_def, empty_thm, demands_map_to_set_def, FLOOKUP_DEF]
+          \\ first_x_assum $ irule_at Any
+          \\ gvs [fdemands_map_to_set_def, empty_thm, demands_map_to_set_def, FLOOKUP_DEF, dest_fd_SND_def]
           \\ rw [] \\ gvs [implode_explode])
-      >- (irule_at Any find_smaller_fd \\ cheat)
+      >- (irule_at Any find_Let \\ first_x_assum $ irule_at (Pos hd)
+          \\ irule_at Any find_smaller_fd \\ first_x_assum $ irule_at Any
+          \\ gvs [fdemands_map_to_set_def, empty_thm, demands_map_to_set_def, FLOOKUP_DEF, dest_fd_SND_def]
+          \\ rw [] \\ gvs [implode_explode])
       >- (irule_at Any find_Let2 \\ fs [ctxt_trans_def]
           \\ first_x_assum $ irule_at Any \\ first_x_assum $ irule_at Any
           \\ gvs [fdemands_map_to_set_def, empty_thm]
           \\ qexists_tac ‘[]’ \\ qexists_tac ‘{}’
-          \\ gvs [demands_map_to_set_def, FLOOKUP_DEF]
+          \\ gvs [demands_map_to_set_def, FLOOKUP_DEF, dest_fd_SND_def]
           \\ pop_assum $ irule_at Any \\ gvs [implode_explode])
-      >- (irule_at Any find_smaller_fd \\ cheat)
+      >- (irule_at Any find_Let2 \\ first_x_assum $ irule_at Any
+          \\ irule_at Any find_smaller_fd \\ first_x_assum $ irule_at Any
+          \\ gvs [fdemands_map_to_set_def, empty_thm, demands_map_empty, dest_fd_SND_def]
+          \\ qexists_tac ‘[]’ \\ qexists_tac ‘{}’
+          \\ gvs [demands_map_to_set_def, FLOOKUP_DEF, dest_fd_SND_def]
+          \\ pop_assum $ irule_at Any \\ gvs [implode_explode]))
   >~ [‘Letrec a binds exp’]
   >- (rpt gen_tac \\ rename1 ‘demands_analysis_fun (RecBind binds c) _ _’
       \\ qabbrev_tac ‘e = demands_analysis_fun (RecBind binds c) exp (empty compare)’
-      \\ PairCases_on ‘e’ \\ fs [fd_to_set_def]
+      \\ PairCases_on ‘e’ \\ fs [fd_to_set_def] \\ strip_tac
       \\ irule find_Subset
       \\ irule_at Any find_Letrec
       \\ first_x_assum $ qspecl_then [‘cexp_size f exp’] assume_tac
@@ -510,11 +522,8 @@ Proof
       \\ pop_assum $ qspecl_then [‘f’, ‘exp’] assume_tac
       \\ fs [] \\ pop_assum $ drule_then assume_tac
       \\ fs [ctxt_trans_def]
-      \\ rename1 ‘(e0, e1, e2)’ \\ Cases_on ‘e0’
       \\ irule_at Any add_all_demands_soundness
-      \\ qexists_tac ‘{}’
-      \\ fs [demands_map_to_set_def, cmp_of_def, TotOrd_compare,
-             fdemands_map_to_set_def, empty_thm]
+      \\ gvs [TotOrd_compare, fdemands_map_to_set_def, empty_thm]
       \\ first_x_assum $ irule_at Any \\ gvs []
       \\ rename1 ‘LIST_REL _ l’ \\ qexists_tac ‘l’
       \\ rw [LIST_REL_EL_EQN]
@@ -533,12 +542,11 @@ Proof
              exp_of_def, MAP_MAP_o, fd_to_set_def]
       \\ gvs [exp_of_def, find_Bottom, combinTheory.o_DEF, LAMBDA_PROD, MAP_MAP_o]
       \\ rename1 ‘Let s _ _’
-(*      \\ pop_assum $ qspecl_then [‘λnames args ce. adds_demands a (demands_analysis_fun (Unfold names s args (Bind s case_exp c)) ce) args’] assume_tac
- *)   \\ irule find_Let
+      \\ irule find_Let
       \\ first_x_assum $ irule_at Any
       \\ irule_at Any find_rows_of
       \\ qexists_tac ‘{}’ \\ qexists_tac ‘NONE’
-      \\ rw [LIST_REL_EL_EQN, EL_MAP]
+      \\ rw [LIST_REL_EL_EQN, EL_MAP, dest_fd_SND_def]
       \\ rename1 ‘EL n l’
       \\ qabbrev_tac ‘e = EL n l’
       \\ PairCases_on ‘e’
@@ -555,7 +563,7 @@ Proof
       \\ pop_assum $ qspecl_then [‘f’, ‘e' ’] assume_tac
       \\ fs [] \\ pop_assum $ dxrule_then assume_tac
       \\ irule_at Any find_Drop_fd
-      \\ fs [ctxt_trans_def, demands_map_to_set_def, fdemands_map_to_set_def, empty_thm]
+      \\ fs [ctxt_trans_def, TotOrd_compare, fdemands_map_to_set_def, empty_thm]
       \\ last_x_assum $ irule_at Any)
 QED
 
@@ -567,7 +575,7 @@ Proof
                  assume_tac demands_analysis_soundness_lemma
   \\ qabbrev_tac ‘e' = demands_analysis_fun Nil e (empty compare)’
   \\ PairCases_on ‘e'’
-  \\ gvs [fdemands_map_to_set_def, empty_thm, ctxt_trans_def]
+  \\ gvs [fdemands_map_to_set_def, empty_thm, ctxt_trans_def, TotOrd_compare]
   \\ drule find_soundness \\ fs []
 QED
 

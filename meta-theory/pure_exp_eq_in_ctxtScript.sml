@@ -12,6 +12,30 @@ open  pure_alpha_equivTheory;
 
 val _ = new_theory "pure_exp_eq_in_ctxt";
 
+
+(* Definitions *)
+
+Datatype:
+  ctxt = Nil
+       | IsFree string ctxt
+       | Bind string exp ctxt
+       | RecBind ((string # exp) list) ctxt
+End
+
+Definition exp_eq_in_ctxt_def:
+  exp_eq_in_ctxt Nil = (λe1 e2. e1 ≈ e2) ∧
+  exp_eq_in_ctxt (IsFree s c) e1 e2 = (∀e3. closed e3 ⇒ exp_eq_in_ctxt c (Let s e3 e1) (Let s e3 e2)) ∧
+  exp_eq_in_ctxt (Bind s e3 c) e1 e2 = exp_eq_in_ctxt c (Let s e3 e1) (Let s e3 e2) ∧
+  exp_eq_in_ctxt (RecBind l c) e1 e2 = exp_eq_in_ctxt c (Letrec l e1) (Letrec l e2)
+End
+
+Definition ctxt_size_def:
+  ctxt_size Nil = 0n ∧
+  ctxt_size (IsFree s ctxt) = 1 + ctxt_size ctxt ∧
+  ctxt_size (Bind s e ctxt) = 1 + list_size char_size s +  exp_size e + ctxt_size ctxt ∧
+  ctxt_size (RecBind sel ctxt) = 1 + exp1_size sel + ctxt_size ctxt
+End
+
 (* Preliminaries *)
 
 Theorem exp_eq_l_refl:
@@ -488,106 +512,7 @@ Proof
   \\ fs [subst_def, eval_wh_def, eval_wh_to_def]
 QED
 
-(*Theorem MAP_Pair:
-  ∀l f1 f2. MAP (f1 ## f2) l = ZIP (MAP f1 (MAP FST l), MAP f2 (MAP SND l))
-Proof
-  Induct \\ gvs []
-  \\ PairCases \\ fs []
-QED
-
-Theorem FOLDL_MAP:
-  ∀l2 f hd l. FOLDL (λeL' (p1, p2). MAP (f p1 p2) eL') (hd::l) l2
-              = (FOLDL (λe (p1, p2). f p1 p2 e) hd l2)::(FOLDL (λeL' (p1, p2). MAP (f p1 p2) eL') l l2)
-Proof
-  cheat
-QED
-
-Theorem FOLDL_MAP_Last:
-  ∀l2 f hd l. FOLDL (λeL' (p1, p2). MAP (f p1 p2) eL') (l++[hd]) l2
-              = (FOLDL (λeL' (p1, p2). MAP (f p1 p2) eL') l l2)++[FOLDL (λe (p1, p2). f p1 p2 e) hd l2]
-Proof
-  cheat
-QED
-
-Theorem ZIP_APPEND1:
-  ∀l1 l2 l3 h1 h2. ZIP (l1, l2) ++ (h1, h2)::l3 = ZIP (l1 ++ [h1], l2 ++ [h2]) ++ l3
-Proof
-  cheat
-QED
-
-Theorem APPEND1:
-  ∀l e. [e]++l = e::l
-Proof
-  cheat
-QED
-
-Theorem not_MEM_no_perm:
-  ∀h h2 l. (¬MEM h (MAP FST l)) ⇒ MAP (perm1 h h2) (MAP FST l) = MAP FST l
-Proof
-  rw [] >> irule LIST_EQ >>
-  rw [EL_MAP]
-QED
-
-Theorem Letrec_rename:
-  ∀f1 f2 eL common e b.
-    LENGTH f1 = LENGTH f2 ∧ LENGTH eL = LENGTH f1
-    ∧ ALL_DISTINCT (f1 ++ MAP FST common)
-    ∧ EVERY (λv. ¬MEM v f1 ∧ v ∉ freevars (Letrec (common ++ ZIP (f1, eL)) e)) f2
-    ⇒ (Letrec (common ++ ZIP (f1, eL)) e ≅?
-       Letrec (ZIP (MAP FST common,
-                    FOLDL (λeL' (x, y). MAP (perm_exp x y) eL') (MAP SND common) (ZIP (f1, f2)))
-               ++ ZIP (f2,
-                       FOLDL (λeL' (x, y). MAP (perm_exp x y) eL') eL (ZIP (f1, f2))))
-       (FOLDL (λe (x, y). perm_exp x y e) e (ZIP (f1, f2)))
-      ) b
-Proof
-  Induct
-  >- gvs [exp_eq_refl, GSYM UNZIP_MAP, ZIP_UNZIP] >>
-  gen_tac >> Cases >> Cases >>
-  rw [FOLDL_MAP, ZIP_APPEND1, GSYM FOLDL_MAP_Last] >>
-  irule exp_eq_trans >> irule_at (Pos hd) exp_alpha_exp_eq >>
-  irule_at Any exp_alpha_Letrec_Alpha >>
-  rename1 ‘h2 ≠ h’ >> qexists_tac ‘h2’ >> fs [] >>
-  rename1 ‘MAP (perm1 h h2 ## perm_exp _ _) (ZIP (f1, eL))’ >>
-  rename1 ‘EVERY _ f2’ >>
-  last_x_assum $ qspecl_then
-               [‘f2’, ‘eL’, ‘(MAP (perm1 h h2 ## perm_exp h h2) common) ++ [h2, perm_exp h h2 h'']’]
-               assume_tac >>
-  gvs [MAP_Pair, APPEND1, MAP_ZIP]
-  gvs [MAP_Pair, ZIP_APPEND1] >>
-  rename1 ‘Letrec (common ++ (hv1, eL1)::ZIP(f1, tL))’ >>
-  qspecl_then [‘common’, ‘ZIP (f1, tL)’, ‘hv1’, ‘h'’, ‘eL1’] assume_tac exp_alpha_Letrec_Alpha >>
-  cheat
-QED
-
-Theorem Letrec_renameList:
-  ∀s bL e b. ∃bL' e'. set (MAP FST bL') ∩ s = {} ∧ (Letrec bL e ≅? Letrec bL' e') b
-Proof
-  cheat
-QED*)
-
 (* Part on context *)
-
-Datatype:
-  ctxt = Nil
-       | IsFree string ctxt
-       | Bind string exp ctxt
-       | RecBind ((string # exp) list) ctxt
-End
-
-Definition exp_eq_in_ctxt_def:
-  exp_eq_in_ctxt Nil = (λe1 e2. e1 ≈ e2) ∧
-  exp_eq_in_ctxt (IsFree s c) e1 e2 = (∀e3. closed e3 ⇒ exp_eq_in_ctxt c (Let s e3 e1) (Let s e3 e2)) ∧
-  exp_eq_in_ctxt (Bind s e3 c) e1 e2 = exp_eq_in_ctxt c (Let s e3 e1) (Let s e3 e2) ∧
-  exp_eq_in_ctxt (RecBind l c) e1 e2 = exp_eq_in_ctxt c (Letrec l e1) (Letrec l e2)
-End
-
-Definition ctxt_size_def:
-  ctxt_size Nil = 0n ∧
-  ctxt_size (IsFree s ctxt) = 1 + ctxt_size ctxt ∧
-  ctxt_size (Bind s e ctxt) = 1 + list_size char_size s +  exp_size e + ctxt_size ctxt ∧
-  ctxt_size (RecBind sel ctxt) = 1 + exp1_size sel + ctxt_size ctxt
-End
 
 Theorem exp_eq_in_ctxt_refl:
   ∀c e. exp_eq_in_ctxt c e e
@@ -877,6 +802,22 @@ Theorem Let_Apps_in_ctxt:
   ∀v e1 e2 eL c. exp_eq_in_ctxt c (Let v e1 (Apps e2 eL)) (Apps (Let v e1 e2) (MAP (Let v e1) eL))
 Proof
   rw [Let_Apps, exp_eq_IMP_exp_eq_in_ctxt]
+QED
+
+Theorem Letrec_Apps:
+  ∀l bL b e. (Letrec bL (Apps e l) ≅? Apps (Letrec bL e) (MAP (Letrec bL) l)) b
+Proof
+  Induct >> gvs [exp_eq_refl, Apps_def] >>
+  rpt gen_tac >>
+  irule exp_eq_trans >> pop_assum $ irule_at Any >>
+  irule exp_eq_Apps_cong >>
+  fs [exp_eq_l_refl, Letrec_App]
+QED
+
+Theorem Letrec_Apps_in_ctxt:
+  ∀l b e c. exp_eq_in_ctxt c (Letrec b (Apps e l)) (Apps (Letrec b e) (MAP (Letrec b) l))
+Proof
+  gvs [exp_eq_IMP_exp_eq_in_ctxt, Letrec_Apps]
 QED
 
 
