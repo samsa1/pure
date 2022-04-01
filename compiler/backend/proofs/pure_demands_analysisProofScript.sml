@@ -9,7 +9,7 @@ open arithmeticTheory listTheory stringTheory alistTheory dep_rewrite
      finite_mapTheory mlstringTheory;
 open pure_expTheory pure_valueTheory pure_evalTheory pure_eval_lemmasTheory
      pure_exp_lemmasTheory pure_miscTheory pure_exp_relTheory pure_congruenceTheory
-     pure_cexpTheory pure_demandTheory pure_exp_eq_in_ctxtTheory;
+     pure_cexpTheory pure_demandTheory;
 
 val _ = new_theory "pure_demands_analysisProof";
 
@@ -34,17 +34,27 @@ Definition add_all_demands_def:
   add_all_demands a (m, e, _) = foldrWithKey (λ id () e. Prim a Seq [Var a (explode id); e] ) e m
 End
 
+Definition compute_ALL_DISTINCT_def:
+  compute_ALL_DISTINCT [] m = T ∧
+  compute_ALL_DISTINCT (v::tl) m =
+              (mlmap$lookup m (mlstring$implode v) = NONE
+               ∧ compute_ALL_DISTINCT tl (insert m (implode v) ()))
+End
+
 Definition boolList_of_fdemands_def:
-  boolList_of_fdemands m vl = MAP (λv. lookup m (mlstring$implode v) = SOME ()) vl
+  boolList_of_fdemands m vl =
+  let b = compute_ALL_DISTINCT vl (mlmap$empty mlstring$compare) in
+    MAP (λv. b ∧ lookup m (mlstring$implode v) = SOME ()) vl
 End
 
 Definition demands_analysis_fun_def:
   (demands_analysis_fun c ((Var a0 a1): 'a cexp) fds =
-     let fd = case lookup fds (implode a1) of
+     let fd = case mlmap$lookup fds (implode a1) of
             | SOME l => SOME (l, mlmap$empty mlstring$compare)
             | NONE => NONE
      in
        (mlmap$insert (mlmap$empty mlstring$compare) (implode a1) (), (Var a0 a1 : 'a cexp), fd)) ∧
+
   (demands_analysis_fun c (App a0 (f: 'a cexp) (argl: 'a cexp list)) fds =
      let (m1, f', fd) = demands_analysis_fun c f fds in
        let eL' = MAP (λe. demands_analysis_fun c e fds) argl in
@@ -56,44 +66,67 @@ Definition demands_analysis_fun_def:
                   (let ds = FOLDL2 (λm1 (m2, e, _) b. if b then union m1 m2 else m1) m2 eL' fdL in
                      let eL3 = MAP (add_all_demands a0) eL' in
                        if LENGTH fdL ≤ LENGTH argl
-                       then (union m1 ds, App a0 f' eL3, NONE)
+                       then (mlmap$union m1 ds, App a0 f' eL3, NONE)
                        else (m1, App a0 f' eL3, NONE)))) ∧
+
   (demands_analysis_fun c (Lam a0 vl e) fds =
-     let (m, e', fd) = demands_analysis_fun (IsFree vl c) e (empty compare) in
+   let (m, e', fd) = demands_analysis_fun (IsFree vl c) e
+                                  (FOLDL (λf k. mlmap$delete f (mlstring$implode k)) fds vl) in
        (empty compare, Lam a0 vl e', SOME (boolList_of_fdemands m vl, empty compare))) ∧
+
   (demands_analysis_fun c (Let a0 name e1 e2) fds =
      let (m1, e1', fd1) = demands_analysis_fun c e1 fds in
-       let (m2, e2', fd2) = demands_analysis_fun (Bind name e1 c) e2 (empty compare) in
-         case fd2 of
-           | NONE => (empty compare, Let a0 name e1' e2', NONE)
-           | SOME (fdL, _) => (empty compare, Let a0 name e1' e2', SOME (fdL, empty compare))) ∧
+       let (m2, e2', fd2) = demands_analysis_fun (Bind name e1 c) e2 (delete fds (implode name)) in
+         (delete m2 (implode name),
+          (case lookup m2 (implode name) of
+             | NONE => Let a0 name e1' e2'
+             | SOME () => Let a0 name e1' (Prim a0 Seq [Var a0 name; e2'])),
+          case fd2 of
+             | NONE => NONE
+             | SOME (fdL, fd_map) => SOME (fdL, delete fd_map (implode name)))) ∧
+
   (demands_analysis_fun c (Prim a0 Seq [e1; e2]) fds =
      let (m1, e1', fd1) = demands_analysis_fun c e1 fds in
        let (m2, e2', fd2) = demands_analysis_fun c e2 fds in
          (union m1 m2, Prim a0 Seq [e1'; e2'], fd2)) ∧
   (demands_analysis_fun c (Prim a0 Seq _) fds =
    (empty compare, Prim a0 Seq [], NONE)) ∧
+
   (demands_analysis_fun c (Prim a0 (AtomOp op) el) fds =
      let outL = MAP (λe. demands_analysis_fun c e fds) el in
        let (mL, el1) = UNZIP outL in
          let (el', fdL) = UNZIP el1 in
            let m = FOLDL union (empty compare) mL in
              (m, Prim a0 (AtomOp op) (el': 'a cexp list), NONE)) ∧
+
   (demands_analysis_fun c (Prim a0 (Cons s) el) fds =
      let el = MAP (λe. add_all_demands a0 (demands_analysis_fun c e fds)) el in
        (empty compare, Prim a0 (Cons s) el, NONE)) ∧
+
   (demands_analysis_fun c (Letrec a0 binds e) fds =
-     let e' = add_all_demands a0 (demands_analysis_fun (RecBind binds c) e (empty compare)) in
-       (empty compare, Letrec a0 binds e', NONE)) ∧
+   let vL = MAP FST binds in
+     let (m, e2, fd) = demands_analysis_fun (RecBind binds c) e
+                                            (FOLDL (λf k. delete f (implode k)) fds vL) in
+     let e3 = adds_demands a0 (m, e2, fd) vL in
+       (FOLDL (λf k. delete f (implode k)) m vL,
+        Letrec a0 binds e3,
+        case fd of
+          | NONE => NONE
+          | SOME (bL, fd_map) => SOME (bL, FOLDL (λf k. delete f (implode k)) fd_map vL))) ∧
+
   (demands_analysis_fun c (Case a0 e n cases) fds =
    if MEM n (FLAT (MAP (FST o SND) cases))
    then
      (empty compare, Case a0 e n cases, NONE)
    else
      let (m, e', fd) = demands_analysis_fun c e fds in
-       let cases' = MAP (λ(name,args,ce). (name, args,
-                                           adds_demands a0 (demands_analysis_fun
-                                                (Unfold name n args (Bind n e c)) ce (empty compare)) args)) cases in
+       let cases' = MAP (λ(name,args,ce).
+                           (name, args,
+                            adds_demands a0
+                                         (demands_analysis_fun
+                                          (Unfold name n args (Bind n e c))
+                                          ce
+                                          (empty compare)) args)) cases in
              (empty compare, Case a0 e' n cases', NONE))
 Termination
   WF_REL_TAC ‘measure $ (cexp_size (K 0)) o (FST o SND)’ \\ rw []
@@ -158,6 +191,149 @@ Proof
   rename1 ‘union m2 h’ >>
   last_x_assum $ qspecl_then [‘cmp_of m2’, ‘union m2 h’] assume_tac >>
   gvs [union_thm, demands_map_union, UNION_ASSOC]
+QED
+
+Theorem FOLDL_delete_ok:
+  ∀m v. map_ok m
+        ⇒ map_ok (FOLDL (λm2 w. delete m2 (implode w)) m vL)
+          ∧ cmp_of (FOLDL (λm2 w. delete m2 ((implode w) : mlstring)) m vL) = cmp_of m
+Proof
+  Induct_on ‘LENGTH vL’ >> rw [] >>
+  rename1 ‘SUC _ = LENGTH vL’ >>
+  qspecl_then [‘vL’] assume_tac last_exists >> gvs [FOLDL_APPEND, delete_thm]
+QED
+
+Theorem demands_map_delete:
+  ∀m v. map_ok m ⇒ ∀ps. (ps, v) ∉ demands_map_to_set (delete m (implode v))
+Proof
+  rw [demands_map_to_set_def, delete_thm]
+QED
+
+Theorem demands_map_delete_subset:
+  ∀m v. map_ok m ⇒
+        demands_map_to_set (delete m (implode v)) ⊆ demands_map_to_set m
+Proof
+  rw [demands_map_to_set_def, delete_thm]
+QED
+
+Theorem demands_map_delete2:
+  ∀m v w ps. map_ok m ∧ (ps, v) ∉ demands_map_to_set m
+           ⇒ (ps, v) ∉ demands_map_to_set (delete m w)
+Proof
+  rw [demands_map_to_set_def, delete_thm]
+QED
+        
+Theorem demands_map_FOLDL_delete:
+  ∀m v.
+    map_ok m ∧ MEM v vL
+    ⇒ ∀ps. (ps, v) ∉ demands_map_to_set (FOLDL (λm2 w. delete m2 (implode w)) m vL)
+Proof
+  Induct_on ‘LENGTH vL’ >> rw [] >>
+  rename1 ‘SUC _ = LENGTH vL’ >>
+  qspecl_then [‘vL’] assume_tac last_exists >> gvs [FOLDL_APPEND]
+  >- (irule demands_map_delete2 >>
+      gvs [FOLDL_delete_ok]) >>
+  irule demands_map_delete >>
+  gvs [FOLDL_delete_ok]
+QED
+
+Theorem fdemands_map_to_set_soundness:
+  ∀fds n x. map_ok fds ⇒
+            (lookup fds (implode n) = SOME x ⇔ (n, x) ∈ fdemands_map_to_set fds)
+Proof
+  rw [lookup_thm, FLOOKUP_DEF, fdemands_map_to_set_def] >>
+  eq_tac >> rw [] >> gvs [implode_explode] >>
+  pop_assum $ irule_at Any >> gvs [explode_implode]
+QED
+
+Theorem fdemands_map_delete_subset:
+  ∀v fds. map_ok fds
+           ⇒ fdemands_map_to_set (delete fds v)
+                                 ⊆ fdemands_map_to_set fds
+Proof
+  Induct >> gvs [fdemands_map_to_set_def, SUBSET_DEF, delete_thm] >>
+  rw [DOMSUB_FAPPLY_NEQ]
+QED
+
+Theorem fdemands_map_FOLDL_delete_subset:
+  ∀vL fds. map_ok fds
+           ⇒ fdemands_map_to_set (FOLDL (λf k. delete f (implode k)) fds vL)
+                                 ⊆ fdemands_map_to_set fds
+Proof
+  Induct >> rw [] >>
+  irule SUBSET_TRANS >> last_x_assum $ irule_at $ Pos hd >>
+  gvs [delete_thm, fdemands_map_delete_subset]
+QED
+
+Theorem fdemands_map_delete:
+  ∀m v. map_ok m ⇒ ∀ps. (v, ps) ∉ fdemands_map_to_set (delete m (implode v))
+Proof
+  rw [fdemands_map_to_set_def, delete_thm]
+QED
+
+Theorem fdemands_map_delete2:
+  ∀m w d. map_ok m ∧ d ∉ fdemands_map_to_set m
+           ⇒ d ∉ fdemands_map_to_set (delete m w)
+Proof
+  gvs [FORALL_PROD] >>
+  rw [fdemands_map_to_set_def, delete_thm] >>
+  rename1 ‘x ∉ FDOM _ ∨ x = w’ >> pop_assum $ qspecl_then [‘x’] assume_tac >>
+  Cases_on ‘x = w’ >>
+  gvs [DOMSUB_FAPPLY_NEQ]
+QED
+        
+Theorem fdemands_map_FOLDL_delete:
+  ∀m v.
+    map_ok m ∧ MEM v vL
+    ⇒ ∀ps. (v, ps) ∉ fdemands_map_to_set (FOLDL (λm2 w. delete m2 (implode w)) m vL)
+Proof
+  Induct_on ‘LENGTH vL’ >> rw [] >>
+  rename1 ‘SUC _ = LENGTH vL’ >>
+  qspecl_then [‘vL’] assume_tac last_exists >> gvs [FOLDL_APPEND]
+  >- (irule fdemands_map_delete2 >>
+      gvs [FOLDL_delete_ok]) >>
+  irule fdemands_map_delete >>
+  gvs [FOLDL_delete_ok]
+QED
+
+Theorem fdemands_map_delete_soundness:
+  ∀v fds n ps. map_ok fds
+               ∧ (n, ps) ∈ fdemands_map_to_set (delete fds (implode v))
+               ⇒ n ≠ v ∧ (n, ps) ∈ fdemands_map_to_set fds
+Proof
+  rw [fdemands_map_to_set_def] >>
+  gvs [delete_thm, DOMSUB_FAPPLY_NEQ]
+  >- (strip_tac >> gvs [])  
+QED
+
+Theorem demands_map_delete_soundness:
+  ∀v m n ps. map_ok m
+               ∧ (ps, n) ∈ demands_map_to_set (delete m (implode v))
+               ⇒ n ≠ v ∧ (ps, n) ∈ demands_map_to_set m
+Proof
+  rw [demands_map_to_set_def] >>
+  gvs [delete_thm, DOMSUB_FAPPLY_NEQ] >>
+  strip_tac >> gvs []
+QED
+
+Theorem compute_ALL_DISTINCT_soundness_lemma:
+  ∀l m. compute_ALL_DISTINCT l m ∧ map_ok m ⇒
+        ALL_DISTINCT l ∧ (∀v. MEM v l ⇒ lookup m (implode v) = NONE)
+Proof
+  Induct >> rw [compute_ALL_DISTINCT_def] >>
+  last_x_assum $ dxrule_then assume_tac >>
+  gvs [insert_thm, lookup_thm, FLOOKUP_UPDATE]
+  >- (strip_tac >> first_x_assum $ dxrule_then assume_tac >>
+      gvs []) >>
+  first_x_assum $ dxrule_then assume_tac >>
+  FULL_CASE_TAC >> fs []
+QED
+
+Theorem compute_ALL_DISTINCT_soundness:
+  ∀l m. compute_ALL_DISTINCT l (empty compare) ⇒ ALL_DISTINCT l
+Proof
+  rw [] >> dxrule_then assume_tac compute_ALL_DISTINCT_soundness_lemma >>
+  gvs [empty_thm, TotOrd_compare]
 QED
 
 Theorem FOLDL_union_map_ok:
@@ -281,21 +457,19 @@ Proof
   \\ pop_assum $ irule_at Any \\ fs []
 QED
 
-Theorem fdemands_map_to_set_soundness:
-  ∀fds n x. map_ok fds ⇒
-            (lookup fds (implode n) = SOME x ⇔ (n, x) ∈ fdemands_map_to_set fds)
+Theorem find_subset_aid:
+  ∀d ps v. (ps, v) ∈ d ⇒ ∃ps'. (ps ++ ps', v) ∈ d
 Proof
-  rw [lookup_thm, FLOOKUP_DEF, fdemands_map_to_set_def] >>
-  eq_tac >> rw [] >> gvs [implode_explode] >>
-  pop_assum $ irule_at Any >> gvs [explode_implode]
+  rw [] >> qexists_tac ‘[]’ >> gvs []
 QED
-
+        
 Theorem demands_analysis_soundness_lemma:
   ∀(f: α -> num) (e: α cexp) c fds m e' fd.
     demands_analysis_fun c e fds = (m, e', fd) ∧ map_ok fds
     ⇒ find (exp_of e) (ctxt_trans c) (fdemands_map_to_set fds)
          (demands_map_to_set m) (exp_of e') (fd_to_set fd) ∧
-            map_ok m ∧ cmp_of m = compare
+      map_ok m ∧ cmp_of m = compare ∧
+      (∀bL fd_map. SOME (bL, fd_map) = fd ⇒ map_ok fd_map ∧ cmp_of fd_map = compare)
 Proof
   gen_tac
   \\ completeInduct_on ‘cexp_size f e’
@@ -310,7 +484,7 @@ Proof
   >- (rw [] \\ rename1 ‘lookup fds (implode n)’
       \\ Cases_on ‘lookup fds (implode n)’
       \\ gvs [find_Var, fd_to_set_def, demands_map_empty,
-              find_Var2, fdemands_map_to_set_soundness])
+              find_Var2, fdemands_map_to_set_soundness, empty_thm, TotOrd_compare])
   >~[‘Prim a op l’]
   >- (Cases_on ‘op’
       >~[‘Prim a Seq l’]
@@ -321,14 +495,16 @@ Proof
           \\ Cases_on ‘t’ >~[‘Prim a Seq [e]’]
           >- (rw [demands_analysis_fun_def, empty_thm, fd_to_set_def, demands_map_empty,
                  TotOrd_compare, exp_of_def, op_of_def]
-              \\ irule find_Eq \\ irule exp_eq_IMP_exp_eq_in_ctxt
+              \\ irule find_Eq \\ irule_at Any find_Bottom
+              \\ irule exp_eq_IMP_exp_eq_in_ctxt
               \\ fs [exp_of_def, op_of_def, eval_wh_IMP_exp_eq,
                      eval_wh_def, eval_wh_to_def, subst_def])
           \\ rename1 ‘e1::e2::t’
           \\ Cases_on ‘t’ >~ [‘Prim a Seq (e1::e2::e3::t)’]
           >- (rw [demands_analysis_fun_def, empty_thm, fd_to_set_def, demands_map_empty,
                  TotOrd_compare, exp_of_def, op_of_def]
-              \\ irule find_Eq \\ irule exp_eq_IMP_exp_eq_in_ctxt
+              \\ irule find_Eq \\ irule_at Any find_Bottom
+              \\ irule exp_eq_IMP_exp_eq_in_ctxt
               \\ fs [exp_of_def, op_of_def, eval_wh_IMP_exp_eq,
                      eval_wh_def, eval_wh_to_def, subst_def])
           \\ rw []
@@ -458,64 +634,98 @@ Proof
       \\ first_assum $ qspecl_then [‘cexp_size f e’] assume_tac
       \\ fs [cexp_size_def]
       \\ pop_assum $ qspecl_then [‘f’, ‘e’] assume_tac
-      \\ rename1 ‘demands_analysis_fun (IsFree namel c) _’
-      \\ qabbrev_tac ‘p = demands_analysis_fun (IsFree namel c) e (empty compare)’
+      \\ rename1 ‘demands_analysis_fun (IsFree namel c) _ (FOLDL _ fds _)’
+      \\ qabbrev_tac ‘p = demands_analysis_fun (IsFree namel c) e
+                                               (FOLDL (λf k. delete f (implode k)) fds namel)’
       \\ PairCases_on ‘p’ \\ fs [empty_thm, TotOrd_compare]
       \\ first_x_assum $ drule_then assume_tac
-      \\ gvs [exp_of_def, fd_to_set_def, demands_map_empty, ctxt_trans_def, empty_thm, TotOrd_compare]
+      \\ gvs [exp_of_def, fd_to_set_def, demands_map_empty, ctxt_trans_def,
+              FOLDL_delete_ok]
       \\ irule find_Subset
       \\ irule_at Any find_Lams_fd
       \\ irule_at Any find_Drop_fd
       \\ first_x_assum $ irule_at Any
-      \\ rw [fdemands_map_to_set_def, empty_thm, TotOrd_compare, LIST_REL_EL_EQN, boolList_of_fdemands_def, EL_MAP]
+      \\ gvs [fdemands_map_FOLDL_delete_subset, boolList_of_fdemands_def, EVERY_MEM,
+              fdemands_map_FOLDL_delete]
+      \\ rw [LIST_REL_EL_EQN, EL_MAP, compute_ALL_DISTINCT_soundness]
       \\ gvs [lookup_thm, FLOOKUP_DEF, demands_map_to_set_def]
       \\ pop_assum $ irule_at Any
       \\ gvs [explode_implode])
   >~ [‘Let a vname e2 e1’]
-  >- (rw []
-      \\ rename1 ‘demands_analysis_fun (Bind _ _ c) _’
+  >- (rpt gen_tac \\ strip_tac
+      \\ rename1 ‘demands_analysis_fun (Bind _ _ c) _ (delete fds _)’
       \\ first_assum $ qspecl_then [‘cexp_size f e1’] assume_tac
       \\ first_x_assum $ qspecl_then [‘cexp_size f e2’] assume_tac
       \\ fs [cexp_size_def]
       \\ first_x_assum $ qspecl_then [‘f’, ‘e2’] assume_tac
       \\ first_x_assum $ qspecl_then [‘f’, ‘e1’] assume_tac
-      \\ qabbrev_tac ‘p1 = demands_analysis_fun (Bind vname e2 c) e1 (empty compare)’
+      \\ qabbrev_tac ‘p1 = demands_analysis_fun (Bind vname e2 c) e1 (delete fds (implode vname))’
       \\ qabbrev_tac ‘p2 = demands_analysis_fun c e2 fds’
-      \\ PairCases_on ‘p1’ \\ rename1 ‘(p10, p11, p12)’ \\ Cases_on ‘p12’
-      \\ TRY (rename1 ‘(_, _, SOME p12)’ \\ PairCases_on ‘p12’)
-      \\ PairCases_on ‘p2’ \\ fs []
+      \\ PairCases_on ‘p1’ \\ PairCases_on ‘p2’ \\ fs []
       \\ last_x_assum $ drule_then assume_tac
       \\ last_x_assum $ drule_then assume_tac
-      \\ gvs [demands_map_empty, empty_thm, TotOrd_compare]
-      \\ irule find_Subset
-      \\ rw [exp_of_def, fd_to_set_def]
-      \\ Cases_on ‘FLOOKUP (to_fmap p10) (implode vname)’
-      \\ fs [ctxt_trans_def, fd_to_set_def] >>~[‘FLOOKUP _ _ = NONE’]
+      \\ gvs [demands_map_empty, delete_thm]
+      \\ irule_at Any find_Subset
+      \\ fs [ctxt_trans_def]
+      \\ rename1 ‘find _ (Bind _ _ _) _ (demands_map_to_set p10) _ (fd_to_set p12)’
+      \\ Cases_on ‘FLOOKUP (to_fmap p10) (implode vname)’ \\ Cases_on ‘p12’
+      \\ fs [ctxt_trans_def, fd_to_set_def, lookup_thm, exp_of_def, op_of_def]
+      >>~[‘FLOOKUP _ _ = NONE’]
       >- (irule_at Any find_Let \\ first_x_assum $ irule_at Any
           \\ first_x_assum $ irule_at Any
-          \\ gvs [fdemands_map_to_set_def, empty_thm, demands_map_to_set_def, FLOOKUP_DEF, dest_fd_SND_def]
-          \\ rw [] \\ gvs [implode_explode])
-      >- (irule_at Any find_Let \\ first_x_assum $ irule_at (Pos hd)
+          \\ gvs [demands_map_delete, FLOOKUP_DEF, dest_fd_SND_def, demands_map_to_set_def]
+          \\ rw [] \\ gvs [implode_explode, delete_thm]
+          \\ last_x_assum $ assume_tac
+          \\ dxrule_then (dxrule_then assume_tac) fdemands_map_delete_soundness
+          \\ fs [])
+      >- (FULL_CASE_TAC \\ fs [fd_to_set_def]
+          \\ irule_at Any find_Let \\ first_x_assum $ irule_at (Pos hd)
           \\ irule_at Any find_smaller_fd \\ first_x_assum $ irule_at Any
-          \\ gvs [fdemands_map_to_set_def, empty_thm, demands_map_to_set_def, FLOOKUP_DEF, dest_fd_SND_def]
-          \\ rw [] \\ gvs [implode_explode])
-      >- (irule_at Any find_Let2 \\ fs [ctxt_trans_def]
+          \\ gvs [demands_map_delete, dest_fd_SND_def, demands_map_to_set_def, FLOOKUP_DEF]
+          \\ rw [] \\ gvs [implode_explode, delete_thm]
+          \\ last_x_assum $ assume_tac
+          \\ dxrule_then (dxrule_then assume_tac) fdemands_map_delete_soundness
+          \\ fs [])
+      >- (irule_at Any find_Let2 \\ irule_at Any find_Seq
           \\ first_x_assum $ irule_at Any \\ first_x_assum $ irule_at Any
-          \\ gvs [fdemands_map_to_set_def, empty_thm]
-          \\ qexists_tac ‘[]’ \\ qexists_tac ‘{}’
-          \\ gvs [demands_map_to_set_def, FLOOKUP_DEF, dest_fd_SND_def]
-          \\ pop_assum $ irule_at Any \\ gvs [implode_explode])
-      >- (irule_at Any find_Let2 \\ first_x_assum $ irule_at Any
+          \\ gvs [dest_fd_SND_def, FLOOKUP_DEF]
+          \\ qexists_tac ‘[]’ \\ qexists_tac ‘[]’
+          \\ rename1 ‘demands_map_to_set (delete p10 (implode vname))’
+          \\ qexists_tac ‘demands_map_to_set (delete p10 (implode vname))’
+          \\ conj_asm1_tac
+          >- (gvs [demands_map_to_set_def] \\ pop_assum $ irule_at Any
+              \\ gvs [])
+          \\ rw [find_subset_aid]
+          >- (dxrule_then (dxrule_then assume_tac) demands_map_delete_soundness
+              \\ gvs [])
+          \\ last_x_assum $ assume_tac
+          \\ dxrule_then (dxrule_then assume_tac) fdemands_map_delete_soundness
+          \\ fs [])
+      >- (irule_at Any find_Let2 \\ irule_at Any find_Seq
+          \\ FULL_CASE_TAC \\ fs [fd_to_set_def]
+          \\ first_x_assum $ irule_at Any
           \\ irule_at Any find_smaller_fd \\ first_x_assum $ irule_at Any
-          \\ gvs [fdemands_map_to_set_def, empty_thm, demands_map_empty, dest_fd_SND_def]
-          \\ qexists_tac ‘[]’ \\ qexists_tac ‘{}’
-          \\ gvs [demands_map_to_set_def, FLOOKUP_DEF, dest_fd_SND_def]
-          \\ pop_assum $ irule_at Any \\ gvs [implode_explode]))
+          \\ gvs [delete_thm, demands_map_delete_subset, dest_fd_SND_def, demands_map_delete]
+          \\ qexists_tac ‘[]’ \\ qexists_tac ‘[]’
+          \\ rename1 ‘demands_map_to_set (delete p10 (implode vname))’
+          \\ qexists_tac ‘demands_map_to_set (delete p10 (implode vname))’
+          \\ conj_asm1_tac
+          >- (gvs [demands_map_to_set_def, FLOOKUP_DEF] \\ irule_at Any $ GSYM explode_implode
+              \\ gvs [])
+          \\ rw [find_subset_aid]
+          >- (dxrule_then (dxrule_then assume_tac) demands_map_delete_soundness
+              \\ gvs [])
+          \\ last_x_assum $ assume_tac
+          \\ dxrule_then (dxrule_then assume_tac) fdemands_map_delete_soundness
+          \\ fs []))
   >~ [‘Letrec a binds exp’]
-  >- (rpt gen_tac \\ rename1 ‘demands_analysis_fun (RecBind binds c) _ _’
-      \\ qabbrev_tac ‘e = demands_analysis_fun (RecBind binds c) exp (empty compare)’
+  >- (rpt gen_tac
+      \\ rename1 ‘demands_analysis_fun (RecBind binds c) _ (FOLDL _ fds (MAP FST binds))’
+      \\ qabbrev_tac ‘e = demands_analysis_fun (RecBind binds c) exp
+                                (FOLDL (λf k. delete f (implode k)) fds (MAP FST binds))’
       \\ PairCases_on ‘e’ \\ fs [fd_to_set_def] \\ strip_tac
-      \\ irule find_Subset
+      \\ irule_at Any find_Subset
+      \\ cheat
       \\ irule_at Any find_Letrec
       \\ first_x_assum $ qspecl_then [‘cexp_size f exp’] assume_tac
       \\ fs [cexp_size_def]
