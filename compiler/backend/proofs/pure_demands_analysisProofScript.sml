@@ -47,6 +47,17 @@ Definition boolList_of_fdemands_def:
     MAP (λv. b ∧ lookup m (mlstring$implode v) = SOME ()) vl
 End
 
+Definition handle_Apps_demands_def:
+  handle_Apps_demands a [] args = ([], MAP (add_all_demands a) args, mlmap$empty mlstring$compare)  ∧
+  handle_Apps_demands a bL [] = (bL, [], empty compare) ∧
+  (handle_Apps_demands a (T::bL) ((m, e, fd)::args) =
+    let (bL', eL', m') = handle_Apps_demands a bL args in
+      (bL', e::eL', union m m')) ∧
+  (handle_Apps_demands a (F::bL) (arg0::args) =
+    let (bL', eL', m') = handle_Apps_demands a bL args in
+      (bL', (add_all_demands a arg0)::eL', m'))
+End
+
 Definition demands_analysis_fun_def:
   (demands_analysis_fun c ((Var a0 a1): 'a cexp) fds =
      let fd = case mlmap$lookup fds (implode a1) of
@@ -63,11 +74,9 @@ Definition demands_analysis_fun_def:
                   (let e' = MAP (λe. add_all_demands a0 e) eL' in
                     (m1, (App (a0: 'a) (f': 'a cexp) (e': 'a cexp list) : 'a cexp), NONE))
            | SOME (fdL, m2) =>
-                  (let ds = FOLDL2 (λm1 (m2, e, _) b. if b then union m1 m2 else m1) m2 eL' fdL in
-                     let eL3 = MAP (add_all_demands a0) eL' in
-                       if LENGTH fdL ≤ LENGTH argl
-                       then (mlmap$union m1 ds, App a0 f' eL3, NONE)
-                       else (m1, App a0 f' eL3, NONE)))) ∧
+               (case handle_Apps_demands a0 fdL eL' of
+                  | ([], eL'', m3) => (union m1 (union m2 m3), App a0 f' eL'', NONE)
+                  | (fdL', eL'', m3) => (m1, App a0 f' eL'', SOME (fdL', union m2 m3))))) ∧
 
   (demands_analysis_fun c (Lam a0 vl e) fds =
    let (m, e', fd) = demands_analysis_fun (IsFree vl c) e
@@ -222,7 +231,7 @@ Theorem demands_map_delete2:
 Proof
   rw [demands_map_to_set_def, delete_thm]
 QED
-        
+
 Theorem demands_map_FOLDL_delete:
   ∀m v.
     map_ok m ∧ MEM v vL
@@ -281,7 +290,7 @@ Proof
   Cases_on ‘x = w’ >>
   gvs [DOMSUB_FAPPLY_NEQ]
 QED
-        
+
 Theorem fdemands_map_FOLDL_delete:
   ∀m v.
     map_ok m ∧ MEM v vL
@@ -303,7 +312,7 @@ Theorem fdemands_map_delete_soundness:
 Proof
   rw [fdemands_map_to_set_def] >>
   gvs [delete_thm, DOMSUB_FAPPLY_NEQ]
-  >- (strip_tac >> gvs [])  
+  >- (strip_tac >> gvs [])
 QED
 
 Theorem demands_map_delete_soundness:
@@ -462,7 +471,71 @@ Theorem find_subset_aid:
 Proof
   rw [] >> qexists_tac ‘[]’ >> gvs []
 QED
-        
+
+Theorem handle_Apps_demands_soundness:
+  ∀bL argl bL' fds c m eL a.
+    handle_Apps_demands a bL (MAP (λe. demands_analysis_fun c e fds) argl) = (bL', eL, m)
+    ∧ EVERY (λ(dm, _, _). map_ok dm ∧ cmp_of dm = compare) (MAP (λe. demands_analysis_fun c e fds) argl)
+    ⇒ (bL' = [] ⇔ LENGTH bL ≤ LENGTH argl)
+      ∧ (LENGTH bL > LENGTH argl ⇒ ∃bL''. LENGTH bL'' = LENGTH argl ∧  bL = bL'' ++ bL')
+      ∧ (∀p. p ∈ demands_map_to_set m
+             ⇒ ∃i. i < LENGTH bL ∧ EL i bL
+                   ∧ p ∈ EL i (MAP (λe'. demands_map_to_set (FST e'))
+                               (MAP (λe. demands_analysis_fun c e fds) argl)))
+      ∧ LENGTH argl = LENGTH eL
+      ∧ map_ok m ∧ cmp_of m = compare
+      ∧ (LENGTH bL ≤ LENGTH argl
+         ⇒ (∃argl1 argl2.
+              argl1 ++ argl2 = argl ∧ LENGTH argl1 = LENGTH bL)
+           ∧  (∃eL1 eL2.
+                 eL1 ++ eL2 = eL ∧ LENGTH eL1 = LENGTH bL))
+      ∧ (∀i. i < LENGTH argl ⇒ EL i eL = (if i < LENGTH bL ∧ EL i bL
+                                         then FST (SND (demands_analysis_fun c (EL i argl) fds))
+                                         else add_all_demands a (demands_analysis_fun c (EL i argl) fds)))
+Proof
+  Induct >> gvs [handle_Apps_demands_def, empty_thm, TotOrd_compare, demands_map_empty, EL_MAP] >>
+  Cases >> Cases >> gvs [handle_Apps_demands_def, empty_thm, TotOrd_compare, demands_map_empty] >>
+  rpt $ gen_tac
+  >~[‘handle_Apps_demands a (T::bL) (demands_analysis_fun c ehd fds::MAP _ tl)’]
+  >- (qabbrev_tac ‘hd = demands_analysis_fun c ehd fds’ >>
+      PairCases_on ‘hd’ >> gvs [handle_Apps_demands_def] >>
+      qabbrev_tac ‘hAd = handle_Apps_demands a bL (MAP (λe. demands_analysis_fun c e fds) tl)’ >>
+      PairCases_on ‘hAd’ >>
+      strip_tac >> gvs [] >>
+      last_x_assum $ drule_then $ dxrule_then  assume_tac >>
+      gvs [union_thm] >> rw []
+      >- (qspecl_then [‘$=’] assume_tac LIST_REL_rules >> fs [])
+      >- (gvs [demands_map_union]
+          >- (qexists_tac ‘0’ >> gvs []) >>
+          first_x_assum $ dxrule_then assume_tac >> gvs [] >>
+          rename1 ‘EL i bL’ >> qexists_tac ‘SUC i’ >> gvs [EL_MAP])
+      >> gvs []
+      >>~[‘ehd::(argl1 ++ argl2)’]
+      >- (qexists_tac ‘ehd::argl1’ >> qexists_tac ‘argl2’ >> gvs [])
+      >- (qexists_tac ‘ehd::argl1’ >> qexists_tac ‘argl2’ >> gvs []) >>
+      rename1 ‘EL i _’ >> Cases_on ‘i’ >> gvs []) >>
+  rename1 ‘handle_Apps_demands a bL (MAP (λe. demands_analysis_fun c e fds) tl)’ >>
+  qabbrev_tac ‘hAd = handle_Apps_demands a bL (MAP (λe. demands_analysis_fun c e fds) tl)’ >>
+  PairCases_on ‘hAd’ >>
+  strip_tac >> gvs [] >>
+  last_x_assum $ drule_then $ dxrule_then assume_tac >>
+  gvs [] >> rw []
+  >- (qspecl_then [‘$=’] assume_tac LIST_REL_rules >> fs [])
+  >- (first_x_assum $ dxrule_then assume_tac >> gvs [] >>
+      rename1 ‘EL i bL’ >> qexists_tac ‘SUC i’ >> gvs [EL_MAP]) >>
+  gvs []
+  >>~[‘h::(argl1 ++ argl2)’]
+  >- (qexists_tac ‘h::argl1’ >> qexists_tac ‘argl2’ >> gvs [])
+  >- (qexists_tac ‘h::argl1’ >> qexists_tac ‘argl2’ >> gvs []) >>
+  rename1 ‘EL i _’ >> Cases_on ‘i’ >> gvs []
+QED
+
+Theorem Apps_append:
+  ∀eL1 eL2 f. Apps f (eL1 ++ eL2) = Apps (Apps f eL1) eL2
+Proof
+  Induct >> gvs [Apps_def]
+QED
+
 Theorem demands_analysis_soundness_lemma:
   ∀(f: α -> num) (e: α cexp) c fds m e' fd.
     demands_analysis_fun c e fds = (m, e', fd) ∧ map_ok fds
@@ -608,6 +681,58 @@ Proof
           \\ PairCases_on ‘p’ \\ fs []
           \\ irule_at Any add_all_demands_soundness
           \\ gvs [TotOrd_compare] \\ first_x_assum $ irule_at Any)
+      \\ FULL_CASE_TAC \\ gvs []
+      \\ rename1 ‘handle_Apps_demands a fdL (MAP _ argl)’
+      \\ qabbrev_tac ‘hAd = handle_Apps_demands a fdL (MAP (λe. demands_analysis_fun c e fds) argl)’
+      \\ PairCases_on ‘hAd’ \\ fs []
+      \\ drule_then assume_tac handle_Apps_demands_soundness
+      \\ ‘EVERY (λ(dm, _, _). map_ok dm ∧ cmp_of dm = compare) (MAP (λe. demands_analysis_fun c e fds) argl)’
+        by (rw [EVERY_EL, EL_MAP] \\ rename1 ‘EL n argl’
+            \\ first_x_assum $ qspecl_then [‘cexp_size f (EL n argl)’] assume_tac
+            \\ ‘cexp_size f (EL n argl) < cexp6_size f argl’ by metis_tac [cexp_size_lemma, MEM_EL]
+            \\ fs [cexp_size_def]
+            \\ pop_assum kall_tac
+            \\ pop_assum $ qspecl_then [‘f’, ‘EL n argl’] assume_tac
+            \\ fs []
+            \\ pop_assum $ qspecl_then [‘c’, ‘fds’] assume_tac
+            \\ qabbrev_tac ‘p = demands_analysis_fun c (EL n argl) fds’
+            \\ PairCases_on ‘p’ \\ fs [])
+      \\ first_x_assum $ dxrule_then assume_tac
+      \\ gvs []
+      \\ FULL_CASE_TAC \\ gvs [union_thm, fd_to_set_def, demands_map_union, exp_of_def]
+      >- (rename1 ‘argl1 ++ argl2’
+          \\ qabbrev_tac ‘hAd' = handle_Apps_demands a fdL (MAP (λe. demands_analysis_fun c e fds) argl1)’
+          \\ PairCases_on ‘hAd'’ \\ gvs [Apps_append]
+          \\ irule find_Apps
+          \\ irule_at Any find_No_args
+          \\ irule_at Any find_Apps_fd
+          \\ gvs []
+          \\ qpat_x_assum ‘find _ _ _ _ _ _’ $ irule_at Any
+          \\ qexists_tac ‘MAP (λe. demands_map_to_set (FST (demands_analysis_fun c e fds))) argl1’
+          \\ gvs [LIST_REL_EL_EQN, FORALL_PROD] \\ rw [] \\ gvs []
+          >~[‘(ps, v) ∈ demands_map_to_set hAd'2’]
+          >- (disj2_tac \\ last_x_assum $ dxrule_then assume_tac
+              \\ gvs [] \\ first_assum $ irule_at Any \\ gvs [EL_MAP, EL_APPEND_EQN])
+          >- (gvs [EL_ZIP, EL_MAP] \\ rename1 ‘n < LENGTH _’
+              \\ first_x_assum $ qspecl_then [‘n’] assume_tac \\ gvs [EL_APPEND_EQN]
+              \\ last_x_assum $ qspecl_then [‘cexp_size f (EL n (argl1 ++ argl2))’] assume_tac
+              \\ ‘cexp_size f (EL n (argl1 ++ argl2)) < cexp6_size f (argl1 ++ argl2)’
+                by (assume_tac cexp_size_lemma >> gvs [] >> first_x_assum irule >>
+                    irule EL_MEM >> fs [])
+              \\ fs [cexp_size_def]
+              \\ pop_assum kall_tac
+              \\ pop_assum $ qspecl_then [‘f’, ‘EL n argl1’] assume_tac
+              \\ gvs [EL_APPEND_EQN]
+              \\ pop_assum $ qspecl_then [‘c’] assume_tac
+              \\ qabbrev_tac ‘p = demands_analysis_fun c (EL n argl1) fds’
+              \\ PairCases_on ‘p’ \\ fs []
+              \\ first_x_assum $ drule_then assume_tac
+              \\ FULL_CASE_TAC \\ gvs []
+              >- first_assum $ irule_at Any
+              >- (irule_at Any add_all_demands_soundness
+                  \\ first_assum $ irule_at Any
+                  \\ gvs [TotOrd_compare]))
+          >- (gvs [EL_MAP] \\ cheat))
       \\ cheat
       \\ irule find_Apps
       \\ fs []
