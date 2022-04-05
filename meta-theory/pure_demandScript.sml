@@ -1876,6 +1876,18 @@ Proof
   \\ fs [well_formed_def]
 QED
 
+Theorem demands_Letrec:
+  ∀d b e c. e demands (d, RecBind b c) ∧ ¬MEM (SND d) (MAP FST b) ⇒ Letrec b e demands (d, c)
+Proof
+  PairCases >> rw [demands_def, exp_eq_in_ctxt_def] >>
+  irule exp_eq_in_ctxt_trans >> last_x_assum $ irule_at Any >>
+  irule exp_eq_IMP_exp_eq_in_ctxt >> irule exp_eq_trans >>
+  irule_at Any Letrec_Prim >> irule exp_eq_Prim_cong >>
+  gvs [exp_eq_refl] >>
+  irule Letrec_not_in_freevars >>
+  gvs [freevars_Projs, EVERY_MEM]
+QED
+
 Theorem needs_Projs_reduce:
   ∀ps ps' e e' c. e needs ((ps ++ ps', e'), c) ⇒ e needs ((ps, e'), c)
 Proof
@@ -3680,11 +3692,19 @@ Inductive find: (* i i i o o o *)
      ∧ find e2 c fdc ds e3 fd
      ⇒ find e1 c fdc ds e3 fd) ∧
 [find_Letrec:]
-  (∀e e' ds c b b' fdc fd.
-     LIST_REL (λ(n1, e1) (n2, e2). n1 = n2 ∧ e1 ≈ e2) b b'
-     ∧ find e (RecBind b c) fdc ds e' fd
+  (∀e e' ds ds' c b b' fdc fdc' fd dsL fdL.
+     LENGTH b = LENGTH dsL ∧ LENGTH b = LENGTH b' ∧ LENGTH b = LENGTH fdL
+     ∧ (∀i. i < LENGTH b
+            ⇒ FST (EL i b') = FST (EL i b)
+              ∧ find (SND (EL i b)) (RecBind b c) fdc (EL i dsL) (SND (EL i b')) (EL i fdL))
+     ∧ find e (RecBind b c) fdc' ds e' fd
      ∧ EVERY (λv. (∀argDs. (v, argDs) ∉ fdc) ∧ (∀ps. (ps, v) ∉ dest_fd_SND fd)) (MAP FST b)
-     ⇒ find (Letrec b e) c fdc {} (Letrec b e') fd)
+     ∧ (∀v argDs. (v, argDs) ∈ fdc' ⇒
+                  (v, argDs) ∈ fdc
+                  ∨ (∃i fdSet. FST (EL i b) = v ∧ i < LENGTH b ∧ EL i fdL = SOME (argDs, fdSet)))
+     ∧ (∀ps v. (ps, v) ∈ ds' ⇒ (ps, v) ∈ ds ∧ ¬MEM v (MAP FST b))
+     ∧ ALL_DISTINCT (MAP FST b)
+     ⇒ find (Letrec b e) c fdc ds' (Letrec b' e') fd)
 End
 
 fun apply_to_first_n 0 tac = ALL_TAC
@@ -3816,6 +3836,57 @@ Proof
   irule exp_eq_in_ctxt_trans >> irule_at (Pos hd) $ iffLR exp_eq_in_ctxt_sym >>
   irule_at Any Let_Apps_in_ctxt >>
 QED*)
+
+Theorem MAP_FST_no_change:
+  ∀l f. MAP FST l = MAP FST (MAP (λ(v, e). (v, f e)) l)
+Proof
+  Induct >> gvs [FORALL_PROD]
+QED
+
+Theorem ALL_DISTINCT_FST_MAP:
+  ∀l (f : α -> α). ALL_DISTINCT (MAP FST l) ⇒ ALL_DISTINCT (MAP FST (MAP (λ(v,e). (v, f e)) l))
+Proof
+  gvs [GSYM MAP_FST_no_change]
+QED
+
+Theorem fmap_FOLDL_FOLDR:
+  ∀l f f2. ALL_DISTINCT (MAP FST l) ⇒
+           FOLDR (flip $|+) f l = FOLDL $|+ f l
+Proof
+  Induct >> gvs [FORALL_PROD] >> rw [] >>
+  dxrule_then assume_tac FUPDATE_FUPDATE_LIST_COMMUTES >>
+  gvs [FUPDATE_LIST]  
+QED
+        
+Theorem Letrec_unfold:
+  ∀lcs i b. i < LENGTH lcs ∧ ALL_DISTINCT (MAP FST lcs)
+            ⇒ (Letrec lcs (Var (FST (EL i lcs))) ≅? Letrec lcs (SND (EL i lcs))) b
+Proof
+  rw [] >> irule eval_IMP_exp_eq >>
+  rw [subst_def, eval_thm, subst_funs_def, MAP_MAP_o, combinTheory.o_DEF, LAMBDA_PROD, bind_def,
+      FLOOKUP_DRESTRICT, FDIFF_def]
+  >- (gvs [MEM_EL] >> rename1 ‘i < LENGTH _’ >>
+      first_x_assum $ qspecl_then [‘i’] assume_tac >> gvs [EL_MAP]) >>
+  rename1 ‘FLOOKUP _ (FST (EL i lcs))’ >> rename1 ‘DRESTRICT f _’ >>
+  qabbrev_tac ‘bind_fun = λp2.
+                            Letrec (MAP  (λ(f',e). (f', subst (DRESTRICT f (COMPL (set (MAP FST lcs)))) e)) lcs)
+                                   (subst (DRESTRICT f (COMPL (set (MAP FST lcs)))) p2)’ >>
+  drule_then assume_tac ALL_DISTINCT_FST_MAP >>
+  pop_assum $ qspecl_then [‘bind_fun’] assume_tac >>
+  drule_then assume_tac fmap_FOLDL_FOLDR >>
+  pop_assum $ qspecl_then [‘FEMPTY’] assume_tac >>
+  drule_then assume_tac $ iffRL FLOOKUP_FOLDR_UPDATE >>
+  pop_assum $ qspecl_then [‘bind_fun (SND (EL i lcs))’, ‘FST (EL i lcs)’, ‘FEMPTY’] assume_tac >>
+  gvs [FUPDATE_LIST, DISJOINT_EMPTY, FDOM_FEMPTY, MEM_EL, PAIR] >>
+  FULL_CASE_TAC >> unabbrev_all_tac >> gvs [] >>
+  rename1 ‘FST (EL i lcs) = EL n (MAP FST lcs)’ >>
+  qspecl_then [‘MAP FST lcs’, ‘n’, ‘i’] assume_tac ALL_DISTINCT_EL_IMP >>
+  gvs [EL_MAP, PULL_EXISTS] >> rename1 ‘EL i _’ >>
+  pop_assum $ qspecl_then [‘i’] assume_tac >> gvs [EL_MAP] >>
+  qabbrev_tac ‘pair = EL i lcs’ >> PairCases_on ‘pair’ >> gvs [eval_thm, subst_funs_def, bind_def] >>
+  gvs [FUPDATE_LIST, MAP_MAP_o, combinTheory.o_DEF, LAMBDA_PROD] >>
+  rw [] >> gvs []
+QED
 
 Theorem find_soundness_lemma:
   ∀e c fdc ds e' fd. find e c fdc ds e' fd
@@ -4050,13 +4121,32 @@ Proof
       \\ last_x_assum $ irule_at Any \\ fs []
       \\ irule_at Any demands_empty_Projs
       \\ rpt $ last_x_assum $ irule_at Any)
-  >- (rw [EVERY_CONJ] \\ dxrule_then (dxrule_then assume_tac) fdemands_set_RecBind
+  >- (rename1 ‘exp_eq_in_ctxt c (Letrec b1 e1) (Letrec b2 e2)’
+      \\ rw [EVERY_CONJ] \\ dxrule_then (dxrule_then assume_tac) fdemands_set_RecBind
       \\ gvs [exp_eq_in_ctxt_def, fdemands_def]
-      \\ irule demands_when_applied_Letrec
-      \\ gvs [dest_fd_SND_def, EVERY_MEM]
-      \\ strip_tac \\ last_x_assum $ dxrule_then irule
-      \\ rename1 ‘d2 ∈ ds2’ \\ PairCases_on ‘d2’
-      \\ fs [] \\ first_x_assum $ irule_at Any)
+      \\ ‘∀n l i. (n, l) ∈ fdc' ∧ i < LENGTH l ∧ EL i l
+                            ⇒ Letrec b1 (Var n) fdemands (([], i), LENGTH l, c)’
+        by (rw [] \\ first_x_assum $ dxrule_then assume_tac
+            \\ gvs []
+            \\ irule fdemands_exp_eq
+            \\ irule_at Any exp_eq_IMP_exp_eq_in_ctxt
+            \\ irule_at Any $ iffLR exp_eq_sym \\ irule_at Any Letrec_unfold
+            \\ last_x_assum $ drule_then assume_tac
+            \\ gvs [] \\ irule fdemands_exp_eq
+            \\ first_x_assum $ irule_at Any
+            \\ gvs [exp_eq_in_ctxt_sym])
+      \\ gvs []
+      >~[‘Letrec _ _ demands (d, _)’]
+      >- (irule demands_Letrec
+          \\ PairCases_on ‘d’
+          \\ first_x_assum $ dxrule_then assume_tac
+          \\ gvs [])
+      >- (irule exp_eq_in_ctxt_trans \\ first_x_assum $ irule_at Any
+          \\ cheat)
+      >- (irule fdemands_exp_eq
+          \\ last_x_assum $ irule_at Any \\ gvs []
+          \\ cheat)
+      >- cheat)
 QED
 
 Theorem find_soundness:

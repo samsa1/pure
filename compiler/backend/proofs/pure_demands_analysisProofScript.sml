@@ -479,7 +479,7 @@ Theorem handle_Apps_demands_soundness:
     ⇒ (bL' = [] ⇔ LENGTH bL ≤ LENGTH argl)
       ∧ (LENGTH bL > LENGTH argl ⇒ ∃bL''. LENGTH bL'' = LENGTH argl ∧  bL = bL'' ++ bL')
       ∧ (∀p. p ∈ demands_map_to_set m
-             ⇒ ∃i. i < LENGTH bL ∧ EL i bL
+             ⇒ ∃i. i < LENGTH bL ∧ i < LENGTH argl ∧ EL i bL
                    ∧ p ∈ EL i (MAP (λe'. demands_map_to_set (FST e'))
                                (MAP (λe. demands_analysis_fun c e fds) argl)))
       ∧ LENGTH argl = LENGTH eL
@@ -732,12 +732,34 @@ Proof
               >- (irule_at Any add_all_demands_soundness
                   \\ first_assum $ irule_at Any
                   \\ gvs [TotOrd_compare]))
-          >- (gvs [EL_MAP] \\ cheat))
-      \\ cheat
-      \\ irule find_Apps
-      \\ fs []
-      \\ fs [LIST_REL_EL_EQN]
-      \\ rw []
+          >- (gvs [EL_MAP] \\ rename1 ‘n < LENGTH _’
+              \\ first_x_assum $ qspecl_then [‘n + LENGTH argl1’] assume_tac \\ gvs [EL_APPEND_EQN]
+              \\ last_x_assum $ qspecl_then [‘cexp_size f (EL (n + LENGTH argl1) (argl1 ++ argl2))’] assume_tac
+              \\ ‘cexp_size f (EL (n + LENGTH argl1) (argl1 ++ argl2)) < cexp6_size f (argl1 ++ argl2)’
+                by (assume_tac cexp_size_lemma >> gvs [] >> first_x_assum irule >>
+                    irule EL_MEM >> fs [])
+              \\ fs [cexp_size_def]
+              \\ pop_assum kall_tac
+              \\ pop_assum $ qspecl_then [‘f’, ‘EL n argl2’] assume_tac
+              \\ gvs [EL_APPEND_EQN]
+              \\ pop_assum $ qspecl_then [‘c’] assume_tac
+              \\ qabbrev_tac ‘p = demands_analysis_fun c (EL n argl2) fds’
+              \\ PairCases_on ‘p’ \\ fs []
+              \\ first_x_assum $ drule_then assume_tac
+              \\ irule_at Any add_all_demands_soundness
+              \\ gvs [TotOrd_compare]
+              \\ first_x_assum $ irule_at Any))
+      \\ irule find_Apps_fd
+      \\ rename1 ‘bL2 ++ [h] ++ t’ \\ qexists_tac ‘bL2’
+      \\ ‘bL2 ++ h::t = bL2 ++ [h] ++ t’ by gvs [] \\ rw []
+      \\ pop_assum kall_tac \\ first_x_assum $ irule_at $ Pos last
+      \\ qexists_tac ‘MAP (λe. demands_map_to_set (FST (demands_analysis_fun c e fds))) argl’
+      \\ rw [LIST_REL_EL_EQN] \\ gvs []
+      >- (disj2_tac \\ last_x_assum $ dxrule_then assume_tac
+          \\ gvs [] \\ first_assum $ irule_at Any
+          \\ gvs [EL_MAP, EL_APPEND_EQN])
+      \\ first_x_assum $ drule_then assume_tac
+      \\ gvs [EL_ZIP, EL_MAP]
       \\ rename1 ‘EL n _’
       \\ first_x_assum $ qspecl_then [‘cexp_size f (EL n argl)’] assume_tac
       \\ ‘cexp_size f (EL n argl) < cexp6_size f argl’ by metis_tac [cexp_size_lemma, MEM_EL]
@@ -746,14 +768,14 @@ Proof
       \\ pop_assum $ qspecl_then [‘f’, ‘EL n argl’] assume_tac
       \\ fs []
       \\ pop_assum $ qspecl_then [‘c’] assume_tac
-      \\ qabbrev_tac ‘p = demands_analysis_fun c (EL n argl)’
-      \\ PairCases_on ‘p’
-      \\ fs [EL_MAP]
-      \\ Cases_on ‘p0’
+      \\ qabbrev_tac ‘p = demands_analysis_fun c (EL n argl) fds’
+      \\ PairCases_on ‘p’ \\ fs []
+      \\ first_x_assum $ drule_then assume_tac \\ gvs []
+      \\ FULL_CASE_TAC
+      >- first_assum $ irule_at Any
       \\ irule_at Any add_all_demands_soundness
-      \\ fs [cmp_of_def, TotOrd_compare]
-      \\ qexists_tac ‘{}’
-      \\ fs [])
+      \\ first_x_assum $ irule_at Any
+      \\ gvs [TotOrd_compare])
   >~ [‘Lam a namel e’]
   >- (rw []
       \\ first_assum $ qspecl_then [‘cexp_size f e’] assume_tac
