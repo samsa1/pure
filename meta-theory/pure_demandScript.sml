@@ -23,6 +23,34 @@ Datatype:
        | RecBind ((string # exp) list) ctxt
 End
 
+Definition unfold_ctxt_def:
+  unfold_ctxt Nil e = e ∧
+  unfold_ctxt (IsFree v c) e = Lam v (unfold_ctxt c e) ∧
+  unfold_ctxt (Bind v e c) e2 = Let v e (unfold_ctxt c e2) ∧
+  unfold_ctxt (RecBind bL c) e = Letrec bL (unfold_ctxt c e)
+End
+
+Definition concat_rev_ctxt_def:
+  concat_rev_ctxt Nil c = c ∧
+  concat_rev_ctxt (IsFree v c1) c2 = concat_rev_ctxt c1 (IsFree v c2) ∧
+  concat_rev_ctxt (Bind v e c1) c2 = concat_rev_ctxt c1 (Bind v e c2) ∧
+  concat_rev_ctxt (RecBind bL c1) c2 = concat_rev_ctxt c1 (RecBind bL c2)
+End
+
+Definition concat_ctxt_def:
+  concat_ctxt Nil c = c ∧
+  concat_ctxt (IsFree v c1) c2 = IsFree v (concat_ctxt c1 c2) ∧
+  concat_ctxt (Bind v e c1) c2 = Bind v e (concat_ctxt c1 c2) ∧
+  concat_ctxt (RecBind bL c1) c2 = RecBind bL (concat_ctxt c1 c2)
+End
+
+Definition not_bound_in_ctxt_def:
+  not_bound_in_ctxt Nil v = T ∧
+  not_bound_in_ctxt (IsFree v1 c) v2 = (v1 ≠ v2 ∧ not_bound_in_ctxt c v2) ∧
+  not_bound_in_ctxt (Bind v1 e c) v2 = (v1 ≠ v2 ∧ not_bound_in_ctxt c v2) ∧
+  not_bound_in_ctxt (RecBind bL c) v = (not_bound_in_ctxt c v ∧ ¬MEM v (MAP FST bL))
+End
+
 Definition eq_when_applied_def:
   (eq_when_applied Nil e1 e2 len = ∀l. len = LENGTH l ⇒ (Apps e1 l) ≈ (Apps e2 l)) ∧
   eq_when_applied (Bind v e c) e1 e2 len = eq_when_applied c (Let v e e1) (Let v e e2) len ∧
@@ -37,6 +65,21 @@ Definition exp_eq_in_ctxt_def:
   exp_eq_in_ctxt (RecBind l c) e1 e2 = exp_eq_in_ctxt c (Letrec l e1) (Letrec l e2)
 End
 
+Theorem exp_eq_l_refl:
+  ∀b l. LIST_REL (λx y. (x ≅? y) b) l l
+Proof
+  gen_tac
+  \\ Induct
+  \\ fs [exp_eq_refl]
+QED
+
+Theorem exp_eq_unfold_cong:
+  ∀c e1 e2 b. (e1 ≅? e2) b ⇒ (unfold_ctxt c e1 ≅? unfold_ctxt c e2) b
+Proof
+  Induct >> rw [unfold_ctxt_def] >> last_x_assum $ dxrule_then assume_tac >>
+  gvs [exp_eq_App_cong, exp_eq_refl, exp_eq_Lam_cong, exp_eq_Letrec_cong, exp_eq_l_refl]
+QED
+        
 Theorem eq_when_applied_0:
   ∀c e1 e2. exp_eq_in_ctxt c e1 e2 = eq_when_applied c e1 e2 0
 Proof
@@ -52,14 +95,6 @@ Definition ctxt_size_def:
 End
 
 (* Preliminaries *)
-
-Theorem exp_eq_l_refl:
-  ∀b l. LIST_REL (λx y. (x ≅? y) b) l l
-Proof
-  gen_tac
-  \\ Induct
-  \\ fs [exp_eq_refl]
-QED
 
 Theorem exp_eq_Apps_cong:
   ∀l l' b e e'. LIST_REL (λx y. (x ≅? y) b) l l' ⇒ (e ≅? e') b ⇒ (Apps e l ≅? Apps e' l') b
@@ -1218,37 +1253,6 @@ Proof
   gvs [exp_eq_IMP_exp_eq_in_ctxt, Letrec_Apps]
 QED
 
-Definition unfold_ctxt_def:
-  unfold_ctxt Nil e = e ∧
-  unfold_ctxt (IsFree v c) e = Lam v (unfold_ctxt c e) ∧
-  unfold_ctxt (Bind v e c) e2 = Let v e (unfold_ctxt c e2) ∧
-  unfold_ctxt (RecBind bL c) e = Letrec bL (unfold_ctxt c e)
-End
-
-Definition concat_ctxt_def:
-  concat_ctxt Nil c = c ∧
-  concat_ctxt (IsFree v c1) c2 = concat_ctxt c1 (IsFree v c2) ∧
-  concat_ctxt (Bind v e c1) c2 = concat_ctxt c1 (Bind v e c2) ∧
-  concat_ctxt (RecBind bL c1) c2 = concat_ctxt c1 (RecBind bL c2)
-End
-
-Definition not_bound_in_ctxt_def:
-  not_bound_in_ctxt Nil v = T ∧
-  not_bound_in_ctxt (IsFree v1 c) v2 = (v1 ≠ v2 ∧ not_bound_in_ctxt c v2) ∧
-  not_bound_in_ctxt (Bind v1 e c) v2 = (v1 ≠ v2 ∧ not_bound_in_ctxt c v2) ∧
-  not_bound_in_ctxt (RecBind bL c) v = (not_bound_in_ctxt c v ∧ ¬MEM v (MAP FST bL))
-End
-
-Theorem concat_unfold:
-  ∀c2 c1 e1 e2 len. exp_eq_in_ctxt (concat_ctxt c2 c1) e1 e2
-                   = exp_eq_in_ctxt c1 (unfold_ctxt c2 e1) (unfold_ctxt c2 e2)
-Proof
-  Induct >> gvs [exp_eq_in_ctxt_def, concat_ctxt_def, unfold_ctxt_def] >>
-  rw [] >> eq_tac >> rw []
-  >- (irule exp_eq_in_ctxt_Lam >> gvs [exp_eq_in_ctxt_def])
-  >- gvs [exp_eq_in_ctxt_App, exp_eq_in_ctxt_refl]
-QED
-
 Theorem Let_stay:
   ∀v e b. v ∉ freevars e ⇒ (Let v e (Var v) ≅? Let v e e) b
 Proof
@@ -1257,6 +1261,12 @@ Proof
   irule eval_IMP_exp_eq >>
   rw [eval_thm, subst_def, GSYM subst_fdomsub, bind1_def, subst1_ignore,
       closed_def, IMP_closed_subst, FRANGE_FLOOKUP]
+QED
+
+Theorem concat_rev_ctxt_size:
+  ∀c1 c2. ctxt_size (concat_rev_ctxt c1 c2) = ctxt_size c1 + ctxt_size c2
+Proof
+  Induct >> gvs [ctxt_size_def, concat_rev_ctxt_def]
 QED
 
 Theorem exp_eq_in_ctxt_unfold:
@@ -1268,7 +1278,8 @@ Proof
   >- gvs [exp_eq_in_ctxt_def, exp_eq_IMP_exp_eq_in_ctxt, Let_stay] >>
   irule exp_eq_in_ctxt_trans >> irule_at Any exp_eq_in_ctxt_trans >>
   irule_at (Pos hd) exp_eq_IMP_exp_eq_in_ctxt >> irule_at (Pos last) exp_eq_IMP_exp_eq_in_ctxt >>
-  irule_at (Pos hd) $ iffLR exp_eq_sym >~[‘Letrec’]
+  irule_at (Pos hd) $ iffLR exp_eq_sym
+  >~[‘Letrec’]
   >- (rpt $ irule_at Any Let_Letrec2 >>
       gvs [GSYM exp_eq_in_ctxt_def, EVERY_MEM] >>
       rw [] >> strip_tac >> first_x_assum $ dxrule_then assume_tac >>
@@ -1287,21 +1298,39 @@ Proof
       strip_tac >> first_x_assum $ dxrule_then assume_tac >> fs [])
 QED
 
+Theorem concat_rev_unfold:
+  ∀c2 c1 e1 e2 len. exp_eq_in_ctxt (concat_rev_ctxt c2 c1) e1 e2
+                    = exp_eq_in_ctxt c1 (unfold_ctxt c2 e1) (unfold_ctxt c2 e2)
+Proof
+  Induct >> gvs [exp_eq_in_ctxt_def, concat_rev_ctxt_def, unfold_ctxt_def] >>
+  rw [] >> eq_tac >> rw []
+  >- (irule exp_eq_in_ctxt_Lam >> gvs [exp_eq_in_ctxt_def])
+  >- gvs [exp_eq_in_ctxt_App, exp_eq_in_ctxt_refl]
+QED
+
 Theorem exp_eq_in_ctxt_concat:
   ∀c2 w e' c1. not_bound_in_ctxt c2 w ∧
                (∀v. v ∈ freevars e' ⇒ not_bound_in_ctxt c2 v) ∧ w ∉ freevars e'
-               ⇒ exp_eq_in_ctxt (concat_ctxt c2 (Bind w e' c1)) (Var w) e'
+               ⇒ exp_eq_in_ctxt (concat_rev_ctxt c2 (Bind w e' c1)) (Var w) e'
 Proof
-  gvs [exp_eq_in_ctxt_unfold, concat_unfold]
+  gvs [exp_eq_in_ctxt_unfold, concat_rev_unfold]
+QED
+
+Theorem exp_eq_concat_rev_still_eq:
+  ∀c_top c_bot e e'.
+    exp_eq_in_ctxt (concat_rev_ctxt c_top Nil) e e'
+      ⇒ exp_eq_in_ctxt (concat_rev_ctxt c_top c_bot) e e'
+Proof
+  Induct >> gvs [concat_ctxt_def, concat_rev_unfold, unfold_ctxt_def, exp_eq_in_ctxt_def] >>
+  rw [exp_eq_IMP_exp_eq_in_ctxt]
 QED
 
 Theorem exp_eq_concat_still_eq:
   ∀c_top c_bot e e'.
-    exp_eq_in_ctxt (concat_ctxt c_top Nil) e e'
+    exp_eq_in_ctxt c_top e e'
       ⇒ exp_eq_in_ctxt (concat_ctxt c_top c_bot) e e'
 Proof
-  Induct >> gvs [concat_ctxt_def, concat_unfold, unfold_ctxt_def, exp_eq_in_ctxt_def] >>
-  rw [exp_eq_IMP_exp_eq_in_ctxt]
+  Induct >> gvs [concat_ctxt_def, exp_eq_IMP_exp_eq_in_ctxt, exp_eq_in_ctxt_def]
 QED
 
 Theorem eq_when_applied_unfold:
@@ -1318,7 +1347,7 @@ Proof
 QED
 
 Theorem ALL_DISTINCT_FST_MAP:
-  ∀l (f : α -> α). ALL_DISTINCT (MAP FST l) ⇒ ALL_DISTINCT (MAP FST (MAP (λ(v,e). (v, f e)) l))
+  ∀l f. ALL_DISTINCT (MAP FST l) ⇒ ALL_DISTINCT (MAP FST (MAP (λ(v,e). (v, f e)) l))
 Proof
   gvs [GSYM MAP_FST_no_change]
 QED
@@ -1980,6 +2009,12 @@ Proof
   \\ metis_tac [needs_If2, needs_Var_is_demands]
 QED
 
+Theorem demands_concat:
+  ∀c1 c2 d e. e demands (d, c1) ⇒ e demands (d, concat_ctxt c1 c2)
+Proof
+  gvs [FORALL_PROD, demands_def, exp_eq_concat_still_eq]
+QED
+
 Definition well_formed_def:
   well_formed (Cons s) l = (s ≠ s) ∧
   well_formed (Proj s i) l = (∃ e. l = [e]) ∧
@@ -2206,8 +2241,16 @@ QED
 
 val _ = set_fixity "fdemands" (Infixl 480);
 
+Definition nb_free_def:
+  nb_free Nil = 0 ∧
+  nb_free (IsFree v c) = SUC (nb_free c) ∧
+  nb_free (Bind v e c) = nb_free c ∧
+  nb_free (RecBind b c) = nb_free c
+End
+    
 Definition fdemands_def:
-  f fdemands ((ps, i), len, Nil) = (i < len ∧ (∀l c. LENGTH l = len ⇒ Apps f l needs ((ps, EL i l), c))) ∧
+  f fdemands ((ps, i), len, Nil) = (i < len ∧ (∀l. LENGTH l = len
+                                             ⇒ Apps f l needs ((ps, EL i l), Nil))) ∧
   f fdemands (p, len, Bind v e c) = (Let v e f) fdemands (p, len, c) ∧
   f fdemands (p, len, RecBind b c) = (Letrec b f) fdemands (p, len, c) ∧
   f fdemands (p, len, IsFree v c) = ∀e. closed e ⇒ (Let v e f) fdemands (p, len, c)
@@ -2270,7 +2313,7 @@ Proof
   irule eq_when_applied_bigger >>
   first_x_assum $ irule_at Any >> fs []
 QED
-
+        
 Theorem fdemands_Seq:
   ∀c p len e1 e2. e2 fdemands (p, len, c) ⇒ (Seq e1 e2) fdemands (p, len, c)
 Proof
@@ -2356,21 +2399,21 @@ QED
 
 Theorem fdemands_subset:
   ∀fdc fdc'.
-    (∀n l i. (n, l) ∈ fdc ∧ i < LENGTH l ∧ EL i l ⇒ Var n fdemands (([], i), LENGTH l, c))
+    (∀n l i c2. (n, l) ∈ fdc ∧ i < LENGTH l ∧ EL i l ⇒ Var n fdemands (([], i), LENGTH l, concat_ctxt c c2))
     ∧ fdc' ⊆ fdc
-    ⇒ (∀n l i. (n, l) ∈ fdc' ∧ i < LENGTH l ∧ EL i l ⇒ Var n fdemands (([], i), LENGTH l, c))
+    ⇒ (∀n l i. (n, l) ∈ fdc' ∧ i < LENGTH l ∧ EL i l ⇒ Var n fdemands (([], i), LENGTH l, concat_ctxt c c2))
 Proof
   gvs [SUBSET_DEF]
 QED
 
 Theorem fdemands_set_Bind:
   ∀fdc v e.
-    (∀n l i. (n, l) ∈ fdc ∧ i < LENGTH l ∧ EL i l ⇒ Var n fdemands (([], i), LENGTH l, c))
+    (∀n l i c2. (n, l) ∈ fdc ∧ i < LENGTH l ∧ EL i l ⇒ Var n fdemands (([], i), LENGTH l, concat_ctxt c c2))
     ∧ (∀n l. (n, l) ∈ fdc ⇒ n ≠ v)
-    ⇒ (∀n l i. (n, l) ∈ fdc ∧ i < LENGTH l ∧ EL i l
-               ⇒ Var n fdemands (([], i), LENGTH l, Bind v e c))
+    ⇒ (∀n l i c2. (n, l) ∈ fdc ∧ i < LENGTH l ∧ EL i l
+               ⇒ Var n fdemands (([], i), LENGTH l, concat_ctxt (Bind v e c) c2))
 Proof
-  rw []
+  rw [concat_ctxt_def]
   \\ irule fdemands_Bind
   \\ gvs []
   \\ strip_tac \\ gvs []
@@ -2378,12 +2421,12 @@ QED
 
 Theorem fdemands_set_IsFree:
   ∀fdc v.
-    (∀n l i. (n, l) ∈ fdc ∧ i < LENGTH l ∧ EL i l ⇒ Var n fdemands (([], i), LENGTH l, c))
+    (∀n l i c2. (n, l) ∈ fdc ∧ i < LENGTH l ∧ EL i l ⇒ Var n fdemands (([], i), LENGTH l, concat_ctxt c c2))
     ∧ (∀l. (v, l) ∉ fdc)
-    ⇒ (∀n l i. (n, l) ∈ fdc ∧ i < LENGTH l ∧ EL i l
-               ⇒ Var n fdemands (([], i), LENGTH l, IsFree v c))
+    ⇒ (∀n l i c2. (n, l) ∈ fdc ∧ i < LENGTH l ∧ EL i l
+               ⇒ Var n fdemands (([], i), LENGTH l, concat_ctxt (IsFree v c) c2))
 Proof
-  rw []
+  rw [concat_ctxt_def]
   \\ irule fdemands_IsFree
   \\ gvs []
   \\ strip_tac \\ gvs []
@@ -2391,12 +2434,12 @@ QED
 
 Theorem fdemands_set_FOLDL_IsFree:
   ∀vL fdc c.
-    (∀n l i. (n, l) ∈ fdc ∧ i < LENGTH l ∧ EL i l ⇒ Var n fdemands (([], i), LENGTH l, c))
+    (∀n l i c2. (n, l) ∈ fdc ∧ i < LENGTH l ∧ EL i l ⇒ Var n fdemands (([], i), LENGTH l, concat_ctxt c c2))
     ∧ EVERY (λv. ∀argDs. (v, argDs) ∉ fdc) vL
-    ⇒ (∀n l i. (n, l) ∈ fdc ∧ i < LENGTH l ∧ EL i l
-               ⇒ Var n fdemands (([], i), LENGTH l, FOLDL (λc n. IsFree n c) c vL))
+    ⇒ (∀n l i c2. (n, l) ∈ fdc ∧ i < LENGTH l ∧ EL i l
+               ⇒ Var n fdemands (([], i), LENGTH l, concat_ctxt (FOLDL (λc n. IsFree n c) c vL) c2 ))
 Proof
-  Induct \\ rw []
+  Induct \\ rw [concat_ctxt_def]
   \\ last_x_assum irule
   \\ gvs []
   \\ last_assum $ irule_at Any
@@ -2407,17 +2450,17 @@ QED
 
 Theorem fdemands_set_RecBind:
   ∀fdc c b.
-    (∀n l i. (n, l) ∈ fdc ∧ i < LENGTH l ∧ EL i l ⇒ Var n fdemands (([], i), LENGTH l, c))
+    (∀n l i c2. (n, l) ∈ fdc ∧ i < LENGTH l ∧ EL i l ⇒ Var n fdemands (([], i), LENGTH l, concat_ctxt c c2))
     ∧ EVERY (λv. ∀argDs. (v, argDs) ∉ fdc) (MAP FST b)
-    ⇒ (∀n l i. (n, l) ∈ fdc ∧ i < LENGTH l ∧ EL i l
-               ⇒ Var n fdemands (([], i), LENGTH l, RecBind b c))
+    ⇒ (∀n l i c2. (n, l) ∈ fdc ∧ i < LENGTH l ∧ EL i l
+               ⇒ Var n fdemands (([], i), LENGTH l, concat_ctxt (RecBind b c) c2))
 Proof
-  rw [] >> irule fdemands_RecBind >>
+  rw [concat_ctxt_def] >> irule fdemands_RecBind >>
   gvs [EVERY_EL, EL_MAP] >> rw [] >> strip_tac >>
   first_x_assum $ dxrule_then assume_tac >> gvs []
 QED
 
-Theorem fdemands_concat_ctxt:
+(*Theorem fdemands_concat_ctxt:
   ∀c p len e. e fdemands (p, len, Nil) ⇒ e fdemands (p, len, c)
 Proof
   Induct >> rw [fdemands_def] >>
@@ -2495,7 +2538,7 @@ Proof
   rw [GSYM Apps_def]
   >- (irule exp_eq_trans >>
       irule_at (Pos last) $ iffLR exp_eq_sym >> irule_at Any Apps_Seq >>
-      rename1 ‘Apps f(e::l)’ >> pop_assum $ qspecl_then [‘e::l’, ‘Nil’] assume_tac >> fs [] >>
+      rename1 ‘Apps f(e::l)’ >> pop_assum $ qspecl_then [‘e::l’] assume_tac >> fs [] >>
       dxrule_then (dxrule_then assume_tac) needs_trans >>
       gvs [needs_def, exp_eq_in_ctxt_def, Apps_def])
   >~[‘Letrec’]
@@ -2860,7 +2903,7 @@ Theorem fdemands_Lam:
 Proof
   Induct >> rw [fdemands_def]
   >- (pop_assum $ qspecl_then [‘Fail’] assume_tac >> gvs [])
-  >- (gvs [needs_def] >> irule exp_eq_IMP_exp_eq_in_ctxt >> irule exp_eq_trans >>
+  >- (gvs [needs_def, exp_eq_in_ctxt_def] >> irule exp_eq_trans >>
       rename1 ‘LENGTH l = SUC _’ >> Cases_on ‘l’ >> gvs [Apps_def] >>
       irule_at Any exp_eq_Apps_cong >> irule_at Any exp_eq_l_refl >>
       irule_at Any exp_eq_App_cong >> irule_at (Pos hd) exp_alpha_exp_eq >>
@@ -2911,7 +2954,7 @@ Proof
           gvs [MEM_MAP] >>
           pop_assum $ qspecl_then [‘EL n2 t’] assume_tac >> gvs [EL_MEM]) >>
       irule exp_eq_trans >> last_x_assum $ drule_then assume_tac >>
-      pop_assum $ qspecl_then [‘t’, ‘Nil’] assume_tac >> fs [exp_eq_in_ctxt_def] >> pop_assum $ irule_at Any >>
+      pop_assum $ qspecl_then [‘t’] assume_tac >> fs [exp_eq_in_ctxt_def] >> pop_assum $ irule_at Any >>
       irule exp_eq_trans >> irule_at Any beta_equality >> fs [Once exp_eq_sym] >>
       irule exp_eq_trans >> irule_at Any Let_Seq >>
       irule exp_eq_Prim_cong >> fs [] >>
@@ -4017,8 +4060,7 @@ Proof
   qabbrev_tac ‘bind_fun = λp2.
                             Letrec (MAP  (λ(f',e). (f', subst (DRESTRICT f (COMPL (set (MAP FST lcs)))) e)) lcs)
                                    (subst (DRESTRICT f (COMPL (set (MAP FST lcs)))) p2)’ >>
-  drule_then assume_tac ALL_DISTINCT_FST_MAP >>
-  pop_assum $ qspecl_then [‘bind_fun’] assume_tac >>
+  qspecl_then [‘lcs’, ‘bind_fun’] assume_tac ALL_DISTINCT_FST_MAP >> gvs [] >>
   drule_then assume_tac fmap_FOLDL_FOLDR >>
   pop_assum $ qspecl_then [‘FEMPTY’] assume_tac >>
   drule_then assume_tac $ iffRL FLOOKUP_FOLDR_UPDATE >>
@@ -4028,19 +4070,43 @@ Proof
   rename1 ‘FST (EL i lcs) = EL n (MAP FST lcs)’ >>
   qspecl_then [‘MAP FST lcs’, ‘n’, ‘i’] assume_tac ALL_DISTINCT_EL_IMP >>
   gvs [EL_MAP, PULL_EXISTS] >> rename1 ‘EL i _’ >>
-  pop_assum $ qspecl_then [‘i’] assume_tac >> gvs [EL_MAP] >>
+  first_x_assum $ qspecl_then [‘i’] assume_tac >> gvs [EL_MAP] >>
   qabbrev_tac ‘pair = EL i lcs’ >> PairCases_on ‘pair’ >> gvs [eval_thm, subst_funs_def, bind_def] >>
   gvs [FUPDATE_LIST, MAP_MAP_o, combinTheory.o_DEF, LAMBDA_PROD] >>
   rw [] >> gvs []
 QED
 
+Theorem concat_Nil:
+  ∀c. concat_ctxt c Nil = c
+Proof
+  Induct >> gvs [concat_ctxt_def]
+QED
+
+Theorem concat_FOLDL_IsFree:
+  ∀vL c1 c2. FOLDL (λc n. IsFree n c) (concat_ctxt c1 c2) vL = concat_ctxt (FOLDL (λc n. IsFree n c) c1 vL) c2
+Proof
+  Induct >> gvs [GSYM concat_ctxt_def]
+QED
+
+Theorem demands_when_applied_exp_eq:
+  ∀d e1 e2 len c. exp_eq_in_ctxt c e1 e2 ∧ e1 demands_when_applied (d, len, c)
+                  ⇒ e2 demands_when_applied (d, len, c)
+Proof
+  PairCases >> rw [demands_when_applied_def] >>
+  irule eq_when_applied_trans_exp_eq >>
+  irule_at Any $ iffLR exp_eq_in_ctxt_sym >> last_assum $ irule_at Any >>
+  irule eq_when_applied_trans >> pop_assum $ irule_at Any >>
+  irule exp_eq_in_ctxt_IMP_eq_when_applied >>
+  irule exp_eq_in_ctxt_Prim >> gvs [exp_eq_in_ctxt_refl]
+QED
+
 Theorem find_soundness_lemma:
   ∀e c fdc ds e' fd. find e c fdc ds e' fd
-    ⇒ (∀n l i. (n, l) ∈ fdc ∧ i < LENGTH l ∧ EL i l ⇒ (Var n) fdemands (([], i), LENGTH l, c))
+    ⇒ (∀n l i c2. (n, l) ∈ fdc ∧ i < LENGTH l ∧ EL i l ⇒ (Var n) fdemands (([], i), LENGTH l, concat_ctxt c c2))
     ⇒ exp_eq_in_ctxt c e e' ∧ (∀d. d ∈ ds ⇒ e demands (d, c))
       ∧ (∀argDs ds2.
            fd = SOME (argDs, ds2)
-           ⇒ (∀i. i < LENGTH argDs ∧ EL i argDs ⇒ e' fdemands (([], i), LENGTH argDs, c))
+           ⇒ (∀i c2. i < LENGTH argDs ∧ EL i argDs ⇒ e' fdemands (([], i), LENGTH argDs, concat_ctxt c c2))
              ∧ ∀d2. d2 ∈ ds2 ⇒  e' demands_when_applied (d2, LENGTH argDs, c))
 (*           ∧ ∀eL d2. (LENGTH eL = LENGTH argDs ∧ d2 ∈ ds2) ⇒ (Apps e' eL) demands (d2, c))*)
 Proof
@@ -4096,9 +4162,9 @@ Proof
           \\ first_x_assum irule
           \\ gvs [EL_APPEND_EQN])
       \\ irule demands_when_applied_Apps2
-      \\ gvs [EL_ZIP]
-      \\ rpt $ first_assum $ irule_at Any
-      \\ gvs [EL_APPEND_EQN]
+      \\ rename1 ‘i < LENGTH _’ \\ first_x_assum $ qspecl_then [‘i’, ‘Nil’] assume_tac
+      \\ gvs [EL_ZIP, EL_APPEND_EQN, concat_Nil]
+      \\ first_x_assum $ irule_at Any
       \\ last_x_assum $ drule_then assume_tac \\ gvs []
       \\ irule demands_exp_eq
       \\ rpt $ first_assum $ irule_at $ Pos last)
@@ -4148,13 +4214,14 @@ Proof
   >>~[‘exp_eq_in_ctxt c (Let v e e2) (Let v e' e2')’] (* find_Let *)
   >- (rw [exp_eq_in_ctxt_def]
       \\ rename1 ‘find _ (Bind _ _ _) fdc2 _ _ _’
-      \\ ‘ (∀n l i.
-                        (n,l) ∈ fdc2 ∧ i < LENGTH l ∧ EL i l ⇒
-                        Var n fdemands (([],i),LENGTH l,Bind v e c))’
+      \\ ‘ (∀n l i c2.
+              (n,l) ∈ fdc2 ∧ i < LENGTH l ∧ EL i l ⇒
+              Var n fdemands (([],i),LENGTH l, concat_ctxt (Bind v e c) c2))’
         by (rw [] \\ first_x_assum $ dxrule_then assume_tac
-            \\ gvs [fdemands_Bind, fdemands_def]
+            \\ gvs [fdemands_Bind, fdemands_def, concat_ctxt_def]
             \\ irule fdemands_exp_eq \\ last_x_assum $ irule_at Any
             \\ gvs [] \\ irule $ iffLR exp_eq_in_ctxt_sym
+            \\ irule exp_eq_concat_still_eq
             \\ irule exp_eq_in_ctxt_trans >> last_x_assum $ irule_at Any
             \\ irule exp_eq_IMP_exp_eq_in_ctxt
             \\ gvs [GEN_ALL Let_Var])
@@ -4167,9 +4234,10 @@ Proof
           \\ ‘d1 = v ∨ d1 ≠ v’ by fs []
           \\ gvs [])
       >~[‘Let _ _ _ fdemands _’]
-      >- (irule fdemands_exp_eq \\ fs [fdemands_def]
+      >- (irule fdemands_exp_eq \\ fs [concat_ctxt_def, fdemands_def]
           \\ irule_at (Pos $ el 2) exp_eq_in_ctxt_App
           \\ irule_at (Pos hd) exp_eq_in_ctxt_refl
+          \\ irule_at Any exp_eq_concat_still_eq
           \\ last_x_assum $ irule_at $ Pos hd
           \\ gvs [])
       \\ first_x_assum $ drule_then assume_tac
@@ -4188,12 +4256,13 @@ Proof
       \\ strip_tac \\ gvs [dest_fd_SND_def])
   >- (rw [exp_eq_in_ctxt_def]
       \\ rename1 ‘find _ (Bind _ _ _) fdc2 _ _ _’
-      \\ ‘ (∀n l i.
+      \\ ‘ (∀n l i c2.
                         (n,l) ∈ fdc2 ∧ i < LENGTH l ∧ EL i l ⇒
-                        Var n fdemands (([],i),LENGTH l,Bind v e c))’
+                        Var n fdemands (([],i),LENGTH l, concat_ctxt (Bind v e c) c2))’
         by (rw [] \\ first_x_assum $ dxrule_then assume_tac
-            \\ gvs [fdemands_Bind, fdemands_def]
-            \\ irule fdemands_exp_eq \\ last_x_assum $ irule_at Any
+            \\ gvs [fdemands_Bind, fdemands_def, concat_ctxt_def]
+            \\ irule fdemands_exp_eq
+            \\ irule_at Any exp_eq_concat_still_eq \\ last_x_assum $ irule_at Any
             \\ gvs [] \\ irule $ iffLR exp_eq_in_ctxt_sym
             \\ irule exp_eq_in_ctxt_trans >> last_x_assum $ irule_at Any
             \\ irule exp_eq_IMP_exp_eq_in_ctxt
@@ -4203,8 +4272,9 @@ Proof
           \\ first_x_assum $ irule_at Any
           \\ fs [exp_eq_in_ctxt_App, exp_eq_in_ctxt_refl])
       >~[‘Let _ _ _ fdemands _’]
-      >- (irule fdemands_exp_eq \\ fs [fdemands_def]
-          \\ irule_at (Pos $ el 2) exp_eq_in_ctxt_App
+      >- (irule fdemands_exp_eq \\ fs [fdemands_def, concat_ctxt_def]
+          \\ irule_at Any exp_eq_concat_still_eq
+          \\ irule_at (Pos hd) exp_eq_in_ctxt_App
           \\ irule_at (Pos hd) exp_eq_in_ctxt_refl
           \\ last_x_assum $ irule_at $ Pos hd
           \\ gvs [])
@@ -4231,11 +4301,12 @@ Proof
       \\ strip_tac \\ gvs [dest_fd_SND_def])
   >~[‘SOME (T::argD, ds3)’]
   >- (rw [] \\ gvs [exp_eq_in_ctxt_App, demands_App, fdemands_App, demands_when_applied_App]
-      >- (irule fdemands_0_App_demands \\ last_assum $ irule_at Any \\ gvs []
+      >- (rw [Once $ GSYM concat_Nil]
+          \\ irule fdemands_0_App_demands
+          \\ last_assum $ irule_at Any \\ gvs [concat_Nil]
           \\ irule_at Any demands_exp_eq
           \\ first_x_assum $ dxrule_then assume_tac
-          \\ pop_assum $ irule_at Any \\ gvs [])
-      \\ rw [GSYM Apps_def])
+          \\ pop_assum $ irule_at Any \\ gvs []))
   >~[‘SOME (b::argD, ds3)’]
   >- (rw [] \\ gvs [exp_eq_in_ctxt_App, demands_App, fdemands_App, demands_when_applied_App])
   >~[‘SOME (bL, fd)’]
@@ -4262,37 +4333,53 @@ Proof
       \\ gvs [exp_eq_in_ctxt_Lams])
   >- (rw [] \\ dxrule_then (dxrule_then assume_tac) fdemands_set_FOLDL_IsFree
       \\ gvs [exp_eq_in_ctxt_Lams, LIST_REL_EL_EQN]
-      \\ irule Lams_fdemands
+      \\ irule Lams_fdemands \\ gvs [concat_FOLDL_IsFree]
+      \\ irule_at Any demands_concat
       \\ irule_at Any demands_exp_eq
       \\ last_x_assum $ irule_at Any \\ fs []
       \\ irule_at Any demands_empty_Projs
       \\ rpt $ last_x_assum $ irule_at Any)
   >- (rename1 ‘exp_eq_in_ctxt c (Letrec b1 e1) (Letrec b2 e2)’
-      \\ rw [EVERY_CONJ] \\ dxrule_then (dxrule_then assume_tac) fdemands_set_RecBind
+      \\ strip_tac \\ strip_tac \\ gvs [EVERY_CONJ]
+      \\ dxrule_then (dxrule_then assume_tac) fdemands_set_RecBind
       \\ gvs [exp_eq_in_ctxt_def, fdemands_def]
-      \\ qsuff_tac ‘∀n l i. (n, l) ∈ fdc' ∧ i < LENGTH l ∧ EL i l
-                            ⇒ Letrec b1 (Var n) fdemands (([], i), LENGTH l, c)’
+      \\ ‘∀n l i c2. (n, l) ∈ fdc' ∧ i < LENGTH l ∧ EL i l
+                            ⇒ Letrec b1 (Var n) fdemands (([], i), LENGTH l, concat_ctxt c c2)’
         by (rw [] \\ first_x_assum $ dxrule_then assume_tac
-            \\ gvs []
+            \\ gvs [concat_ctxt_def, fdemands_def]
             \\ irule fdemands_exp_eq
             \\ irule_at Any exp_eq_IMP_exp_eq_in_ctxt
             \\ irule_at Any $ iffLR exp_eq_sym \\ irule_at Any Letrec_unfold
             \\ last_x_assum $ drule_then assume_tac
-            \\ gvs [] \\ irule fdemands_exp_eq
+            \\ gvs [GSYM fdemands_def] \\ irule fdemands_exp_eq
             \\ first_x_assum $ irule_at Any
-            \\ gvs [exp_eq_in_ctxt_sym])
-      \\ gvs []
+            \\ gvs [exp_eq_IMP_exp_eq_in_ctxt, exp_eq_sym])
+      \\ rw [] \\ gvs [fdemands_def, concat_ctxt_def]
       >~[‘Letrec _ _ demands (d, _)’]
       >- (irule demands_Letrec
           \\ PairCases_on ‘d’
           \\ first_x_assum $ dxrule_then assume_tac
           \\ gvs [])
       >- (irule exp_eq_in_ctxt_trans \\ first_x_assum $ irule_at Any
-          \\ cheat)
+          \\ irule exp_eq_IMP_exp_eq_in_ctxt \\ irule exp_eq_Letrec_cong
+          \\ gvs [exp_eq_refl, LIST_REL_EL_EQN] \\ irule_at Any LIST_EQ \\ fs []
+          \\ rw [] \\ last_x_assum $ drule_then assume_tac \\ gvs [EL_MAP])
       >- (irule fdemands_exp_eq
-          \\ last_x_assum $ irule_at Any \\ gvs []
-          \\ cheat)
-      >- cheat)
+          \\ first_x_assum $ irule_at Any \\ gvs []
+          \\ irule exp_eq_concat_still_eq
+          \\ irule exp_eq_IMP_exp_eq_in_ctxt \\ irule exp_eq_Letrec_cong
+          \\ gvs [exp_eq_refl, LIST_REL_EL_EQN] \\ irule_at Any LIST_EQ \\ fs []
+          \\ rw [] \\ last_x_assum $ drule_then assume_tac \\ gvs [EL_MAP])
+      >- (irule demands_when_applied_exp_eq \\ gvs [demands_when_applied_Letrec]
+          \\ first_x_assum $ drule_then assume_tac \\ dxrule_then assume_tac demands_when_applied_Letrec
+          \\ gvs [EVERY_MEM, dest_fd_SND_def]
+          \\ first_x_assum $ irule_at Any \\ gvs []
+          \\ conj_tac
+          >- (strip_tac \\ last_x_assum $ dxrule_then assume_tac
+              \\ rename1 ‘SND d2’ \\ PairCases_on ‘d2’ \\ gvs [])
+          \\ irule exp_eq_IMP_exp_eq_in_ctxt \\ irule exp_eq_Letrec_cong
+          \\ gvs [exp_eq_refl, LIST_REL_EL_EQN] \\ irule_at Any LIST_EQ \\ fs []
+          \\ rw [] \\ last_x_assum $ drule_then assume_tac \\ gvs [EL_MAP]))
 QED
 
 Theorem find_soundness:
