@@ -3831,6 +3831,13 @@ Definition dest_fd_SND_def:
   dest_fd_SND (SOME (bL, s)) = s
 End
 
+Definition demands_boolList_def:
+  demands_boolList d [] = ([], {}) ∧
+  demands_boolList d (hd::tl) =
+    let (bL, d2) = demands_boolList d tl in
+      (((∃ps. (ps, hd) ∈ d)∧ hd ∉ d2)::bL, d2 ∪ {hd})
+End
+
 Inductive find: (* i i i o o o *)
 [find_Drop_fd:]
   (∀e e' c fds ds fd.
@@ -3950,11 +3957,11 @@ Inductive find: (* i i i o o o *)
      ∧ EVERY (λv. ∀argDs. (v, argDs) ∉ fdc) vl
      ⇒ find (Lams vl e) c fdc {} (Lams vl e') NONE ) ∧
 [find_Lams_fd:]
-  (∀e e' c ds vl fdc bL.
+  (∀e e' c ds vl fdc.
      find e (FOLDL (λc n. IsFree n c) c vl) fdc ds e' NONE
      ∧ EVERY (λv. ∀argDs. (v, argDs) ∉ fdc) vl
-     ∧ LIST_REL (λb v. if b then ∃ps. (ps, v) ∈ ds ∧ ALL_DISTINCT vl else T) bL vl
-     ⇒ find (Lams vl e) c fdc {} (Lams vl e') (SOME (bL, {}))) ∧
+     ∧ bL
+     ⇒ find (Lams vl e) c fdc {} (Lams vl e') (SOME (FST (demands_boolList ds vl), {}))) ∧
 [find_Eq:]
   (∀e1 e2 e3 c fdc ds fd.
      exp_eq_in_ctxt c e1 e2
@@ -4131,6 +4138,29 @@ Proof
   irule eq_when_applied_trans >> pop_assum $ irule_at Any >>
   irule exp_eq_in_ctxt_IMP_eq_when_applied >>
   irule exp_eq_in_ctxt_Prim >> gvs [exp_eq_in_ctxt_refl]
+QED
+
+Theorem demands_boolList_soundness:
+  ∀vL ds ds2 bL. demands_boolList ds vL = (bL, ds2)
+                 ⇒ (∀h. MEM h vL ⇔ h ∈ ds2) ∧ LENGTH bL = LENGTH vL
+                   ∧ ∀i. i < LENGTH vL ∧ EL i bL ⇒
+                         (∃ps. (ps, EL i vL) ∈ ds)
+                         ∧  ∀e ps c. e demands ((ps, EL i vL), FOLDL (λc n. IsFree n c) c vL)
+                                     ⇒ Lams vL e fdemands ((ps, i), LENGTH vL, c)
+Proof
+  Induct >> gvs [demands_boolList_def, PAIR] >> rw [] >>
+  rename1 ‘demands_boolList ds vL’ >>
+  qabbrev_tac ‘p = demands_boolList ds vL’ >> PairCases_on ‘p’ >> gvs [] >>
+  last_x_assum $ dxrule_then assume_tac >> gvs [Lams_def]
+  >- (eq_tac >> rw [] >> gvs []) >>
+  rename1 ‘i < SUC _’ >> Cases_on ‘i’
+  >>~[‘0 < SUC _’]
+  >- (gvs [] >> first_x_assum $ irule_at Any)
+  >- (irule Lam_fdemands >> gvs [GSYM demands_when_applied_0] >>
+      dxrule_then assume_tac demands_when_applied_Lams >>
+      gvs [])
+  >- gvs []
+  >- (irule fdemands_Lam >> gvs [])
 QED
 
 Theorem find_soundness_lemma:
@@ -4365,13 +4395,17 @@ Proof
   >- (rw [] \\ dxrule_then (dxrule_then assume_tac) fdemands_set_FOLDL_IsFree
       \\ gvs [exp_eq_in_ctxt_Lams])
   >- (rw [] \\ dxrule_then (dxrule_then assume_tac) fdemands_set_FOLDL_IsFree
-      \\ gvs [exp_eq_in_ctxt_Lams, LIST_REL_EL_EQN]
-      \\ irule Lams_fdemands \\ gvs [concat_FOLDL_IsFree]
+      \\ gvs [exp_eq_in_ctxt_Lams]
+      \\ rename1 ‘demands_boolList ds vL’
+      \\ qabbrev_tac ‘p = demands_boolList ds vL’ \\ PairCases_on ‘p’ \\ gvs []
+      \\ dxrule_then assume_tac demands_boolList_soundness
+      \\ gvs [] \\ first_x_assum $ drule_then $ dxrule_then assume_tac \\ gvs []
+      \\ first_x_assum irule \\ irule demands_empty_Projs
+      \\ gvs [concat_FOLDL_IsFree]
       \\ irule_at Any demands_concat
       \\ irule_at Any demands_exp_eq
-      \\ last_x_assum $ irule_at Any \\ fs []
-      \\ irule_at Any demands_empty_Projs
-      \\ rpt $ last_x_assum $ irule_at Any)
+      \\ last_x_assum $ irule_at Any
+      \\ last_x_assum $ dxrule_then $ irule_at Any)
   >- (rename1 ‘exp_eq_in_ctxt c (Letrec b1 e1) (Letrec b2 e2)’
       \\ strip_tac \\ strip_tac \\ gvs [EVERY_CONJ]
       \\ dxrule_then (dxrule_then assume_tac) fdemands_set_RecBind

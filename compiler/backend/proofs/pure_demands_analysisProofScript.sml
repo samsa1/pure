@@ -49,9 +49,11 @@ Definition UNZIP3_DEF:
 End
 
 Definition boolList_of_fdemands_def:
-  boolList_of_fdemands m vl =
-  let b = compute_ALL_DISTINCT vl (mlmap$empty mlstring$compare) in
-    MAP (λv. b ∧ lookup m (mlstring$implode v) = SOME ()) vl
+  boolList_of_fdemands m [] = ([], mlmap$empty mlstring$compare) ∧
+  boolList_of_fdemands m (h::tl) =
+  let (bL, m2) = boolList_of_fdemands m tl in
+    let h2 = implode h in
+      ((lookup m h2 = SOME () ∧ lookup m2 h2 = NONE)::bL, insert m2 (implode h) ())
 End
 
 Definition handle_Apps_demands_def:
@@ -97,7 +99,7 @@ Definition demands_analysis_fun_def:
   (demands_analysis_fun c (Lam a0 vl e) fds =
    let (m, e', fd) = demands_analysis_fun (IsFree vl c) e
                                   (FOLDL (λf k. mlmap$delete f (mlstring$implode k)) fds vl) in
-       (empty compare, Lam a0 vl e', SOME (boolList_of_fdemands m vl, empty compare))) ∧
+       (empty compare, Lam a0 vl e', SOME (FST (boolList_of_fdemands m vl), empty compare))) ∧
 
   (demands_analysis_fun c (Let a0 name e1 e2) fds =
      let (m1, e1', fd1) = demands_analysis_fun c e1 fds in
@@ -646,6 +648,25 @@ Proof
   pop_assum $ irule_at Any >> gvs [explode_implode]
 QED
 
+Theorem boolList_of_fdemands_soundness:
+  ∀vL m bL d. map_ok m
+              ⇒ FST (boolList_of_fdemands m vL) = FST (demands_boolList (demands_map_to_set m) vL)
+                ∧ map_ok (SND (boolList_of_fdemands m vL))
+                ∧ SND (demands_boolList (demands_map_to_set m) vL)
+                  = IMAGE explode (FDOM (to_fmap (SND (boolList_of_fdemands m vL))))
+Proof
+  Induct >> gvs [boolList_of_fdemands_def, demands_boolList_def, empty_thm, TotOrd_compare] >>
+  rw [] >>
+  rename1 ‘boolList_of_fdemands m vL’ >> qabbrev_tac ‘fd = boolList_of_fdemands m vL’ >> PairCases_on ‘fd’ >>
+  rename1 ‘demands_boolList (_ m) vL’ >>
+  qabbrev_tac ‘dsBL = demands_boolList (demands_map_to_set m) vL’ >> PairCases_on ‘dsBL’ >>
+  fs [] >> last_x_assum $ drule_then assume_tac >> gvs [insert_thm] >>
+  once_rewrite_tac [INSERT_SING_UNION, UNION_COMM] >> gvs [lookup_thm, FLOOKUP_DEF] >>
+  eq_tac >> rw [demands_map_to_set_def] >>
+  gvs [implode_explode] >>
+  first_x_assum $ irule_at Any >> gvs [explode_implode]
+QED
+
 Theorem demands_analysis_soundness_lemma:
   ∀(f: α -> num) (e: α cexp) c fds m e' fd.
     demands_analysis_fun c e fds = (m, e', fd) ∧ map_ok fds
@@ -897,17 +918,13 @@ Proof
       \\ PairCases_on ‘p’ \\ fs [empty_thm, TotOrd_compare]
       \\ first_x_assum $ drule_then assume_tac
       \\ gvs [exp_of_def, fd_to_set_def, demands_map_empty, ctxt_trans_def,
-              FOLDL_delete_ok]
+              FOLDL_delete_ok, boolList_of_fdemands_soundness]
       \\ irule find_Subset
       \\ irule_at Any find_Lams_fd
       \\ irule_at Any find_Drop_fd
-      \\ first_x_assum $ irule_at Any
+      \\ first_x_assum $ irule_at $ Pos hd
       \\ gvs [fdemands_map_FOLDL_delete_subset, boolList_of_fdemands_def, EVERY_MEM,
-              fdemands_map_FOLDL_delete]
-      \\ rw [LIST_REL_EL_EQN, EL_MAP, compute_ALL_DISTINCT_soundness]
-      \\ gvs [lookup_thm, FLOOKUP_DEF, demands_map_to_set_def]
-      \\ pop_assum $ irule_at Any
-      \\ gvs [explode_implode])
+              fdemands_map_FOLDL_delete])
   >~ [‘Let a vname e2 e1’]
   >- (rpt gen_tac \\ strip_tac
       \\ rename1 ‘find _ (ctxt_trans c) (fdemands_map_to_set fds)’
