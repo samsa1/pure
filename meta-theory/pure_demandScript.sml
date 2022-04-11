@@ -79,7 +79,7 @@ Proof
   Induct >> rw [unfold_ctxt_def] >> last_x_assum $ dxrule_then assume_tac >>
   gvs [exp_eq_App_cong, exp_eq_refl, exp_eq_Lam_cong, exp_eq_Letrec_cong, exp_eq_l_refl]
 QED
-        
+
 Theorem eq_when_applied_0:
   ∀c e1 e2. exp_eq_in_ctxt c e1 e2 = eq_when_applied c e1 e2 0
 Proof
@@ -2247,7 +2247,7 @@ Definition nb_free_def:
   nb_free (Bind v e c) = nb_free c ∧
   nb_free (RecBind b c) = nb_free c
 End
-    
+
 Definition fdemands_def:
   f fdemands ((ps, i), len, Nil) = (i < len ∧ (∀l. LENGTH l = len
                                              ⇒ Apps f l needs ((ps, EL i l), Nil))) ∧
@@ -2313,7 +2313,7 @@ Proof
   irule eq_when_applied_bigger >>
   first_x_assum $ irule_at Any >> fs []
 QED
-        
+
 Theorem fdemands_Seq:
   ∀c p len e1 e2. e2 fdemands (p, len, c) ⇒ (Seq e1 e2) fdemands (p, len, c)
 Proof

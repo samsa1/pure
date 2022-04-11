@@ -41,6 +41,13 @@ Definition compute_ALL_DISTINCT_def:
                ∧ compute_ALL_DISTINCT tl (insert m (implode v) ()))
 End
 
+Definition UNZIP3_DEF:
+  UNZIP3 [] = ([], [], []) ∧
+  UNZIP3 ((h1, h2, h3)::tl) =
+    let (l1, l2, l3) = UNZIP3 tl in
+      (h1::l1, h2::l2, h3::l3)
+End
+
 Definition boolList_of_fdemands_def:
   boolList_of_fdemands m vl =
   let b = compute_ALL_DISTINCT vl (mlmap$empty mlstring$compare) in
@@ -103,8 +110,7 @@ Definition demands_analysis_fun_def:
 
   (demands_analysis_fun c (Prim a0 (AtomOp op) el) fds =
      let outL = MAP (λe. demands_analysis_fun c e fds) el in
-       let (mL, el1) = UNZIP outL in
-         let (el', fdL) = UNZIP el1 in
+       let (mL, el', fdL) = UNZIP3 outL in
            let m = FOLDL union (empty compare) mL in
              (m, Prim a0 (AtomOp op) (el': 'a cexp list), NONE)) ∧
 
@@ -115,12 +121,11 @@ Definition demands_analysis_fun_def:
   (demands_analysis_fun c (Letrec a0 binds e) fds =
    let vL = MAP FST binds in
      if compute_ALL_DISTINCT vL (empty compare)
-     then 
+     then
        let (m, e2, fd) = demands_analysis_fun (RecBind binds c) e
                                               (FOLDL (λf k. delete f (implode k)) fds vL) in
          let outL = MAP (λ(v, e). demands_analysis_fun Nil e (empty compare)) binds in
-           let (mL, el1) = UNZIP outL in
-             let (eL', fdL) = UNZIP el1 in
+           let (mL, eL', fdL) = UNZIP3 outL in
                let e3 = adds_demands a0 (m, e2, fd) vL in
                  (FOLDL (λf k. delete f (implode k)) m vL,
                   Letrec a0 (ZIP (vL, eL')) e3,
@@ -229,6 +234,16 @@ Theorem demands_map_delete_subset:
         demands_map_to_set (delete m (implode v)) ⊆ demands_map_to_set m
 Proof
   rw [demands_map_to_set_def, delete_thm]
+QED
+
+Theorem demands_map_FOLDL_delete_subset:
+  ∀vL m. map_ok m ⇒
+        demands_map_to_set (FOLDL (λf k. delete f (implode k)) m vL) ⊆ demands_map_to_set m
+Proof
+  Induct >> rw [] >>
+  irule SUBSET_TRANS >>
+  last_x_assum $ irule_at (Pos hd) >>
+  gvs [demands_map_delete_subset, delete_thm]
 QED
 
 Theorem demands_map_delete2:
@@ -552,12 +567,20 @@ Proof
   Induct >> gvs [Apps_def]
 QED
 
-Theorem UNZIP_LENGTH:
-  ∀l v1 v2. UNZIP l = (v1, v2) ⇒ LENGTH v1 = LENGTH l ∧ LENGTH v2 = LENGTH l
+Theorem UNZIP3_LENGTH:
+  ∀l v1 v2 v3. UNZIP3 l = (v1, v2, v3) ⇒ LENGTH v1 = LENGTH l ∧ LENGTH v2 = LENGTH l ∧ LENGTH v3 = LENGTH l
 Proof
-  cheat
+  Induct >> gvs [UNZIP3_DEF, FORALL_PROD] >>
+  rename1 ‘UNZIP3 l’ >> qabbrev_tac ‘u3 = UNZIP3 l’ >> PairCases_on ‘u3’ >>
+  gvs []
 QED
-        
+
+Theorem UNZIP3_MAP:
+  ∀l. UNZIP3 l = (MAP FST l, MAP (FST o SND) l, MAP (SND o SND) l)
+Proof
+  Induct >> gvs [FORALL_PROD, UNZIP3_DEF]
+QED
+
 Theorem demands_analysis_soundness_lemma:
   ∀(f: α -> num) (e: α cexp) c fds m e' fd.
     demands_analysis_fun c e fds = (m, e', fd) ∧ map_ok fds
@@ -620,7 +643,7 @@ Proof
           \\ dxrule_then (dxrule_then irule) find_Seq2)
       >~ [‘AtomOp op’]
       >- (rpt gen_tac \\ strip_tac
-          \\ gvs [exp_of_def, op_of_def, demands_analysis_fun_def, UNZIP_MAP,
+          \\ gvs [exp_of_def, op_of_def, demands_analysis_fun_def, UNZIP3_MAP,
                   MAP_MAP_o, combinTheory.o_DEF]
           \\ rename1 ‘demands_analysis_fun c _ fds’
           \\ irule_at Any FOLDL_union_cmp_of \\ irule_at Any FOLDL_union_map_ok
@@ -894,10 +917,7 @@ Proof
           \\ rename1 ‘demands_analysis_fun (RecBind binds c) _ (FOLDL _ fds (MAP FST binds))’
           \\ qabbrev_tac ‘e = demands_analysis_fun (RecBind binds c) exp
                                                    (FOLDL (λf k. delete f (implode k)) fds (MAP FST binds))’
-          \\ PairCases_on ‘e’ \\ fs [fd_to_set_def] \\ strip_tac
-          \\ qabbrev_tac ‘outL = UNZIP (MAP (λ(v, e). demands_analysis_fun Nil e (empty compare)) binds)’
-          \\ PairCases_on ‘outL’ \\ gvs[]
-          \\ rename1 ‘UNZIP _ = (mL, outL_SND)’ \\ qabbrev_tac ‘eL_fdL = UNZIP outL_SND’ \\ PairCases_on ‘eL_fdL’
+          \\ PairCases_on ‘e’ \\ gvs [fd_to_set_def, UNZIP3_MAP] \\ strip_tac
           \\ gvs [exp_of_def]
           \\ first_assum $ qspecl_then [‘cexp_size f exp’] assume_tac
           \\ fs [cexp_size_def]
@@ -905,34 +925,65 @@ Proof
           \\ fs [] \\ pop_assum $ drule_then assume_tac
           \\ gvs [FOLDL_delete_ok, ctxt_trans_def]
           \\ irule_at Any find_Subset
+          \\ qexists_tac ‘fdemands_map_to_set (FOLDL (λf k. delete f (implode k)) fds (MAP FST binds))’
           \\ irule_at Any find_Letrec
-          \\ rpt $ FULL_CASE_TAC \\ gvs [FOLDL_delete_ok, fd_to_set_def]
-          \\ gvs [EL_MAP, ALL_DISTINCT_FST_MAP, dest_fd_SND_def]
-          \\ irule_at Any adds_demands_soundness \\ gvs []
-          >- (first_x_assum $ irule_at $ Pos hd
-              \\ irule_at Any fdemands_map_FOLDL_delete_subset
-              \\ qexists_tac ‘MAP FST binds’
-              \\ qexists_tac ‘MAP fd_to_set (SND (UNZIP outL_SND))’ \\ qexists_tac ‘MAP demands_map_to_set mL’
-              \\ rename1 ‘demands_map_to_set (FOLDL _ e0 _)’
-              \\ qexists_tac ‘demands_map_to_set (FOLDL (λf k. delete f (implode k)) e0 (MAP FST binds))’
-              \\ gvs [EL_MAP, EL_ZIP]
-              \\ drule_then assume_tac UNZIP_LENGTH
-              \\ qpat_x_assum ‘UNZIP (MAP _ _) = (_, _)’ assume_tac
-              \\ drule_then assume_tac UNZIP_LENGTH
-              \\ gvs [EL_MAP, EL_ZIP, EVERY_EL]
-              \\ rw [] \\ gvs [demands_map_FOLDL_delete_soundness]
-              \\ cheat)
-          \\ cheat
-          \\ fs [ctxt_trans_def]
-          \\ irule_at Any add_all_demands_soundness
-          \\ gvs [TotOrd_compare, fdemands_map_to_set_def, empty_thm]
-          \\ first_x_assum $ irule_at Any \\ gvs []
-          \\ rename1 ‘LIST_REL _ l’ \\ qexists_tac ‘l’
-          \\ rw [LIST_REL_EL_EQN]
-          \\ rename1 ‘_ p _’ \\ PairCases_on ‘p’ \\ gvs [exp_eq_refl])
+          \\ irule_at Any adds_demands_soundness
+          \\ rpt $ FULL_CASE_TAC
+          \\ gvs [EL_MAP, EL_ZIP, MAP_MAP_o, LAMBDA_PROD, combinTheory.o_DEF, ALL_DISTINCT_FST_MAP, EVERY_EL,
+                  fdemands_map_FOLDL_delete_subset, FOLDL_delete_ok, fd_to_set_def, dest_fd_SND_def]
+          \\ TRY $ irule_at Any find_smaller_fd
+          \\ first_x_assum $ irule_at $ Pos hd
+          \\ gvs [demands_map_FOLDL_delete_subset]
+          \\ rpt $ irule_at Any $ GSYM LENGTH_MAP
+          \\ qexists_tac ‘λ(v, e). demands_map_to_set (FST (demands_analysis_fun Nil e (empty compare)))’
+          \\ qexists_tac ‘λ(v, e). fd_to_set (SND (SND (demands_analysis_fun Nil e (empty compare))))’
+          \\ rename1 ‘demands_analysis_fun _ _ _ = (e0, _, _)’
+          \\ qexists_tac ‘demands_map_to_set (FOLDL (λf k. delete f (implode k)) e0 (MAP FST binds))’
+          \\ rw [EL_MAP]
+                >>~[‘_ ∉ fdemands_map_to_set _’]
+          >- (irule fdemands_map_FOLDL_delete \\ gvs [MEM_EL]
+              \\ first_assum $ irule_at Any \\ gvs [EL_MAP]
+              \\ rename1 ‘_ = FST p’ \\ PairCases_on ‘p’ \\ gvs [])
+          >-  (irule fdemands_map_FOLDL_delete \\ gvs [MEM_EL]
+               \\ first_assum $ irule_at Any \\ gvs [EL_MAP]
+               \\ rename1 ‘_ = FST p’ \\ PairCases_on ‘p’ \\ gvs [])
+              >>~[‘FST p = FST _’]
+          >- (PairCases_on ‘p’ \\ gvs [])
+          >- (PairCases_on ‘p’ \\ gvs [])
+          >~[‘_ ∉ demands_map_to_set _’]
+          >- (irule demands_map_FOLDL_delete \\ gvs [MEM_EL]
+              \\ first_assum $ irule_at Any \\ gvs [EL_MAP]
+              \\ rename1 ‘_ = FST p’ \\ PairCases_on ‘p’ \\ gvs [])
+             >>~[‘¬MEM _ _’]
+          >- (dxrule_then assume_tac demands_map_FOLDL_delete_soundness
+              \\ gvs [] \\ strip_tac \\ first_x_assum irule
+              \\ gvs [MEM_MAP] \\ first_x_assum $ irule_at Any
+              \\ rename1 ‘_ = FST p’ \\ PairCases_on ‘p’ \\ gvs [])
+          >- (dxrule_then assume_tac demands_map_FOLDL_delete_soundness
+              \\ gvs [] \\ strip_tac \\ first_x_assum irule
+              \\ gvs [MEM_MAP] \\ first_x_assum $ irule_at Any
+              \\ rename1 ‘_ = FST p’ \\ PairCases_on ‘p’ \\ gvs [])
+             >>~[‘(_ ++ _, _) ∈ demands_map_to_set _’]
+          >- (qexists_tac ‘[]’ \\ gvs [])
+          >- (qexists_tac ‘[]’ \\ gvs [])
+             >>~[‘_ ∈ demands_map_to_set _’]
+          >- (dxrule_then assume_tac demands_map_FOLDL_delete_soundness \\ gvs [])
+          >- (dxrule_then assume_tac demands_map_FOLDL_delete_soundness \\ gvs [])
+          \\ rename1 ‘EL i _’
+          \\ last_x_assum $ qspecl_then [‘cexp_size f (SND (EL i binds))’] assume_tac
+          \\ ‘cexp_size f (SND (EL i binds)) < cexp4_size f binds’
+            by (assume_tac cexp_size_lemma \\ gvs [] \\ first_x_assum irule
+                \\ gvs [MEM_EL] \\ first_assum $ irule_at Any
+                \\ irule_at Any $ PAIR)
+          \\ gvs [] \\ pop_assum kall_tac
+          \\ pop_assum $ qspecl_then [‘f’, ‘SND (EL i binds)’] assume_tac \\ gvs []
+          \\ qabbrev_tac ‘p = demands_analysis_fun Nil (SND (EL i binds)) (empty compare)’
+          \\ PairCases_on ‘p’ \\ fs [] \\ first_x_assum $ drule_then assume_tac
+          \\ gvs [empty_thm, TotOrd_compare]
+          \\ qabbrev_tac ‘expr = EL i binds’ \\ PairCases_on ‘expr’
+          \\ gvs [fdemands_map_to_set_def, empty_thm, ctxt_trans_def])
       \\ rw [empty_thm, TotOrd_compare, fd_to_set_def, demands_map_empty]
       \\ gvs [exp_of_def, find_Bottom])
-      
   >~ [‘Case a case_exp s l’]
   >- (gen_tac \\ gen_tac
       \\ rename1 ‘Bind _ _ c’
