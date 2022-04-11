@@ -2232,6 +2232,65 @@ Proof
   \\ metis_tac [needs_exp_eq, needs_Var_is_demands]
 QED
 
+Theorem Letrec_unfold:
+  ∀lcs i b. i < LENGTH lcs ∧ ALL_DISTINCT (MAP FST lcs)
+            ⇒ (Letrec lcs (Var (FST (EL i lcs))) ≅? Letrec lcs (SND (EL i lcs))) b
+Proof
+  rw [] >> irule eval_IMP_exp_eq >>
+  rw [subst_def, eval_thm, subst_funs_def, MAP_MAP_o, combinTheory.o_DEF, LAMBDA_PROD, bind_def,
+      FLOOKUP_DRESTRICT, FDIFF_def]
+  >- (gvs [MEM_EL] >> rename1 ‘i < LENGTH _’ >>
+      first_x_assum $ qspecl_then [‘i’] assume_tac >> gvs [EL_MAP]) >>
+  rename1 ‘FLOOKUP _ (FST (EL i lcs))’ >> rename1 ‘DRESTRICT f _’ >>
+  qabbrev_tac ‘bind_fun = λp2.
+                            Letrec (MAP  (λ(f',e). (f', subst (DRESTRICT f (COMPL (set (MAP FST lcs)))) e)) lcs)
+                                   (subst (DRESTRICT f (COMPL (set (MAP FST lcs)))) p2)’ >>
+  qspecl_then [‘lcs’, ‘bind_fun’] assume_tac ALL_DISTINCT_FST_MAP >> gvs [] >>
+  drule_then assume_tac fmap_FOLDL_FOLDR >>
+  pop_assum $ qspecl_then [‘FEMPTY’] assume_tac >>
+  drule_then assume_tac $ iffRL FLOOKUP_FOLDR_UPDATE >>
+  pop_assum $ qspecl_then [‘bind_fun (SND (EL i lcs))’, ‘FST (EL i lcs)’, ‘FEMPTY’] assume_tac >>
+  gvs [FUPDATE_LIST, DISJOINT_EMPTY, FDOM_FEMPTY, MEM_EL, PAIR] >>
+  FULL_CASE_TAC >> unabbrev_all_tac >> gvs [] >>
+  rename1 ‘FST (EL i lcs) = EL n (MAP FST lcs)’ >>
+  qspecl_then [‘MAP FST lcs’, ‘n’, ‘i’] assume_tac ALL_DISTINCT_EL_IMP >>
+  gvs [EL_MAP, PULL_EXISTS] >> rename1 ‘EL i _’ >>
+  first_x_assum $ qspecl_then [‘i’] assume_tac >> gvs [EL_MAP] >>
+  qabbrev_tac ‘pair = EL i lcs’ >> PairCases_on ‘pair’ >> gvs [eval_thm, subst_funs_def, bind_def] >>
+  gvs [FUPDATE_LIST, MAP_MAP_o, combinTheory.o_DEF, LAMBDA_PROD] >>
+  rw [] >> gvs []
+QED
+
+Theorem demands_Letrec2:
+  ∀bL ps i e v c. ALL_DISTINCT (MAP FST bL) ∧ i < LENGTH bL
+                  ∧ e demands (([], FST (EL i bL)), RecBind bL c)
+                  ∧ (SND (EL i bL)) demands ((ps, v), Nil)
+                  ∧ ¬MEM v (MAP FST bL)
+                  ⇒ Letrec bL e demands ((ps, v), c)
+Proof
+  rw [demands_def, exp_eq_in_ctxt_def, Projs_def] >>
+  irule exp_eq_in_ctxt_trans >> first_assum $ irule_at Any >>
+  irule exp_eq_in_ctxt_trans >> irule_at (Pos hd) exp_eq_IMP_exp_eq_in_ctxt >> irule_at Any Letrec_Prim >>
+  irule exp_eq_in_ctxt_trans >> irule_at (Pos last) exp_eq_in_ctxt_Prim >> gvs [] >>
+  irule_at (Pos $ el 2) exp_eq_in_ctxt_refl >>
+  irule_at (Pos $ el 3) $ iffLR exp_eq_in_ctxt_sym >> first_x_assum $ irule_at Any >> gvs [] >>
+  irule exp_eq_in_ctxt_trans >> irule_at (Pos last) exp_eq_IMP_exp_eq_in_ctxt >>
+  irule_at Any exp_eq_Prim_cong >> gvs [] >>
+  irule_at (Pos $ el 2) exp_eq_refl >>
+  irule_at (Pos $ el 3) $ iffLR exp_eq_sym >> irule_at Any Letrec_Prim >> gvs [] >>
+  irule exp_eq_in_ctxt_trans >> irule_at (Pos last) exp_eq_IMP_exp_eq_in_ctxt >>
+  irule_at Any Seq_assoc >>
+  irule exp_eq_in_ctxt_Prim >> gvs [exp_eq_in_ctxt_refl] >>
+  irule exp_eq_in_ctxt_trans >> irule_at (Pos hd) exp_eq_IMP_exp_eq_in_ctxt >>
+  irule_at Any Letrec_unfold >> gvs [] >>
+  irule exp_eq_IMP_exp_eq_in_ctxt >>
+  irule exp_eq_trans >> irule_at Any exp_eq_Letrec_cong >> first_x_assum $ irule_at Any >>
+  irule_at Any exp_eq_l_refl >> gvs [] >>
+  irule exp_eq_trans >> irule_at Any Letrec_Prim >>
+  irule exp_eq_Prim_cong >> gvs [] >>
+  irule_at Any Letrec_not_in_freevars >> gvs [freevars_Projs, EVERY_MEM, Once exp_eq_sym, Letrec_unfold]
+QED
+
 Theorem last_Lams:
   ∀l x e. Lams (l ++ [x]) e = Lams l (Lam x e)
 Proof
@@ -3912,7 +3971,10 @@ Inductive find: (* i i i o o o *)
      ∧ (∀v argDs. (v, argDs) ∈ fdc' ⇒
                   (v, argDs) ∈ fdc
                   ∨ (∃i fdSet. FST (EL i b) = v ∧ i < LENGTH b ∧ EL i fdL = SOME (argDs, fdSet)))
-     ∧ (∀ps v. (ps, v) ∈ ds' ⇒ (ps, v) ∈ ds ∧ ¬MEM v (MAP FST b))
+     ∧ (∀ps v. (ps, v) ∈ ds'
+               ⇒ ¬MEM v (MAP FST b)
+                 ∧ ((ps, v) ∈ ds
+                    ∨ (∃ps' i. i < LENGTH b ∧ (ps', FST (EL i b)) ∈ ds ∧ (ps, v) ∈ EL i dsL)))
      ∧ ALL_DISTINCT (MAP FST b)
      ⇒ find (Letrec b e) c fdc ds' (Letrec b' e') fd)
 End
@@ -4046,35 +4108,6 @@ Proof
   irule exp_eq_in_ctxt_trans >> irule_at (Pos hd) $ iffLR exp_eq_in_ctxt_sym >>
   irule_at Any Let_Apps_in_ctxt >>
 QED*)
-
-Theorem Letrec_unfold:
-  ∀lcs i b. i < LENGTH lcs ∧ ALL_DISTINCT (MAP FST lcs)
-            ⇒ (Letrec lcs (Var (FST (EL i lcs))) ≅? Letrec lcs (SND (EL i lcs))) b
-Proof
-  rw [] >> irule eval_IMP_exp_eq >>
-  rw [subst_def, eval_thm, subst_funs_def, MAP_MAP_o, combinTheory.o_DEF, LAMBDA_PROD, bind_def,
-      FLOOKUP_DRESTRICT, FDIFF_def]
-  >- (gvs [MEM_EL] >> rename1 ‘i < LENGTH _’ >>
-      first_x_assum $ qspecl_then [‘i’] assume_tac >> gvs [EL_MAP]) >>
-  rename1 ‘FLOOKUP _ (FST (EL i lcs))’ >> rename1 ‘DRESTRICT f _’ >>
-  qabbrev_tac ‘bind_fun = λp2.
-                            Letrec (MAP  (λ(f',e). (f', subst (DRESTRICT f (COMPL (set (MAP FST lcs)))) e)) lcs)
-                                   (subst (DRESTRICT f (COMPL (set (MAP FST lcs)))) p2)’ >>
-  qspecl_then [‘lcs’, ‘bind_fun’] assume_tac ALL_DISTINCT_FST_MAP >> gvs [] >>
-  drule_then assume_tac fmap_FOLDL_FOLDR >>
-  pop_assum $ qspecl_then [‘FEMPTY’] assume_tac >>
-  drule_then assume_tac $ iffRL FLOOKUP_FOLDR_UPDATE >>
-  pop_assum $ qspecl_then [‘bind_fun (SND (EL i lcs))’, ‘FST (EL i lcs)’, ‘FEMPTY’] assume_tac >>
-  gvs [FUPDATE_LIST, DISJOINT_EMPTY, FDOM_FEMPTY, MEM_EL, PAIR] >>
-  FULL_CASE_TAC >> unabbrev_all_tac >> gvs [] >>
-  rename1 ‘FST (EL i lcs) = EL n (MAP FST lcs)’ >>
-  qspecl_then [‘MAP FST lcs’, ‘n’, ‘i’] assume_tac ALL_DISTINCT_EL_IMP >>
-  gvs [EL_MAP, PULL_EXISTS] >> rename1 ‘EL i _’ >>
-  first_x_assum $ qspecl_then [‘i’] assume_tac >> gvs [EL_MAP] >>
-  qabbrev_tac ‘pair = EL i lcs’ >> PairCases_on ‘pair’ >> gvs [eval_thm, subst_funs_def, bind_def] >>
-  gvs [FUPDATE_LIST, MAP_MAP_o, combinTheory.o_DEF, LAMBDA_PROD] >>
-  rw [] >> gvs []
-QED
 
 Theorem concat_Nil:
   ∀c. concat_ctxt c Nil = c
@@ -4356,10 +4389,14 @@ Proof
             \\ gvs [exp_eq_IMP_exp_eq_in_ctxt, exp_eq_sym])
       \\ rw [] \\ gvs [fdemands_def, concat_ctxt_def]
       >~[‘Letrec _ _ demands (d, _)’]
-      >- (irule demands_Letrec
-          \\ PairCases_on ‘d’
+      >- (PairCases_on ‘d’
           \\ first_x_assum $ dxrule_then assume_tac
-          \\ gvs [])
+          \\ gvs [demands_Letrec]
+          \\ irule demands_Letrec2 \\ gvs []
+          \\ first_assum $ irule_at Any
+          \\ last_x_assum $ drule_then assume_tac \\ gvs []
+          \\ last_x_assum $ drule_then assume_tac
+          \\ drule_then irule demands_empty_Projs)
       >- (irule exp_eq_in_ctxt_trans \\ first_x_assum $ irule_at Any
           \\ irule exp_eq_IMP_exp_eq_in_ctxt \\ irule exp_eq_Letrec_cong
           \\ gvs [exp_eq_refl, LIST_REL_EL_EQN] \\ irule_at Any LIST_EQ \\ fs []
