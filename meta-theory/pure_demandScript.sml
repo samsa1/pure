@@ -3071,6 +3071,152 @@ Proof
   gvs []
 QED
 
+Theorem unfold_FOLDR_IsFree:
+  ∀l e1 e2.  unfold_ctxt (FOLDR IsFree Nil l) e1 ≈ unfold_ctxt (FOLDR IsFree Nil l) e2 ⇒ e1 ≈ e2
+Proof
+  Induct >> rw [unfold_ctxt_def] >>
+  last_x_assum irule >>
+  gvs [exp_eq_Lam_removed]
+QED
+
+Theorem concat_FOLDL_unfold_FOLDR:
+  ∀l c e1 e2.
+    exp_eq_in_ctxt (FOLDL (flip IsFree) c l) e1 e2
+    = exp_eq_in_ctxt c (unfold_ctxt (FOLDR IsFree Nil l) e1) (unfold_ctxt (FOLDR IsFree Nil l) e2)
+Proof
+  Induct >> gvs [unfold_ctxt_def] >>
+  rw [] >> eq_tac >> rw []
+  >- gvs [exp_eq_in_ctxt_Lam]
+  >- (rw [exp_eq_in_ctxt_def] >>
+      irule exp_eq_in_ctxt_App >>
+      gvs [exp_eq_in_ctxt_refl])
+QED
+
+Overload Letrec1 = ``λf b e. Letrec [(f,b)] e``
+
+Theorem Letrec1_app_bisimilarity_suff:
+  ∀f a b.
+  (Letrec1 f a a ≃ Letrec1 f b b) T ⇒
+  ∀e. freevars e ⊆ {f} ⇒ (Letrec1 f a e ≃ Letrec1 f b e) T
+Proof
+  rw[app_bisimilarity_eq] >>
+  irule exp_eq_trans >> irule_at Any beta_equality_Letrec >> simp[] >>
+  once_rewrite_tac[exp_eq_sym] >>
+  irule exp_eq_trans >> irule_at Any beta_equality_Letrec >> simp[] >>
+  simp[subst_funs_eq_subst, GSYM FUPDATE_EQ_FUPDATE_LIST] >>
+  irule exp_eq_subst >> simp[] >>
+  once_rewrite_tac[exp_eq_sym] >> simp[]
+QED
+
+(*
+Inductive demands_rel:
+[~Eq:]
+  (∀c e. demands_rel (unfold_ctxt c e) (unfold_ctxt c e)) ∧
+[~Fail:]
+  (∀c e. (∀f. eval_wh (subst f e) = wh_Error)
+         ⇒ demands_rel (unfold_ctxt c e) (unfold_ctxt c Fail)) ∧
+[~demands:]
+  (∀e ps v c. e demands ((ps, v), c)
+              ⇒ demands_rel (unfold_ctxt c e) (unfold_ctxt c (Seq (Projs ps (Var v)) e))) ∧
+[~App:]
+  (∀f1 f2 e1 e2 c. demands_rel (unfold_ctxt c f1) (unfold_ctxt c f2)
+                   ∧ demands_rel (unfold_ctxt c e1) (unfold_ctxt c e2)
+                   ⇒ demands_rel (unfold_ctxt c (App f1 e1)) (unfold_ctxt c (App f2 e2))) ∧
+[~Prim:]
+  (∀eL1 eL2 op c. LIST_REL (λe1 e2. demands_rel (unfold_ctxt c e1) (unfold_ctxt c e2)) eL1 eL2
+                  ⇒ demands_rel (unfold_ctxt c (Prim op eL1)) (unfold_ctxt c (Prim op eL2))) ∧
+[~Letrec:]
+  (∀binds1 binds2 e1 e2 c.
+     LIST_REL (λ(v1, e1) (v2, e2). demands_rel (unfold_ctxt c (Letrec binds1 e1))
+                                               (unfold_ctxt c (Letrec binds1 e2))
+                                   ∧ v1 = v2) binds1 binds2
+     ∧ demands_rel (unfold_ctxt c (Letrec binds1 e1)) (unfold_ctxt c (Letrec binds1 e2))
+     ⇒ demands_rel (unfold_ctxt c (Letrec binds1 e1)) (unfold_ctxt c (Letrec binds2 e2)))
+End
+
+Definition remove_err_def:
+  remove_err wh_Error = wh_Diverge ∧
+  remove_err wh = wh
+End
+
+Theorem demands_rel_eval_eq:
+  ∀e1 e2. demands_rel e1 e2 ∧ closed e1 ∧ closed e2
+          ⇒ ∀k. ∃k2. remove_err $ eval_wh_to k e1
+                     = remove_err $ eval_wh_to (k + k2) e2
+Proof
+  Induct_on ‘demands_rel’ >> rw [remove_err_def, unfold_ctxt_def]
+  >- (qexists_tac ‘0’ >> gvs [])
+  >- (gvs [eval_wh_eq] >>
+      rename1 ‘remove_err (eval_wh_to k e1)’ >>
+      Cases_on ‘eval_wh_to k e1 = wh_Diverge’ >> gvs [remove_err_def] >>
+      dxrule_then assume_tac eval_wh_to_agree >>
+      rename1 ‘eval_wh_to k2 _ = wh_Error’ >> pop_assum $ qspecl_then [‘k2’] assume_tac >>
+      gvs [remove_err_def])
+  >- (gvs [eval_wh_to_def] >> cheat)
+  >> cheat
+QED
+
+Theorem demands_rel_IMP_exp_eq:
+  ∀c e1 e2. demands_rel c e1 e2 ⇒ exp_eq_in_ctxt c e1 e2
+Proof
+  Induct_on ‘demands_rel’ >> rw [exp_eq_in_ctxt_refl, demands_def]
+  >- (irule exp_eq_IMP_exp_eq_in_ctxt >>
+      irule eval_IMP_exp_eq >> gvs [subst_def, eval_thm])
+  >- gvs [exp_eq_in_ctxt_Lam]
+  >- gvs [exp_eq_in_ctxt_App]
+  >- (irule exp_eq_in_ctxt_Prim >>
+      gvs [LIST_REL_EL_EQN])
+  >-
+QED
+
+Theorem exp_eq_in_ctxt_Letrec2:
+  ∀c binds binds2 e.
+    ALL_DISTINCT (MAP FST binds)
+    ∧ MAP FST binds = MAP FST binds2
+    ∧ LIST_REL (λ(v1, e1) (v2, e2). Letrec binds e1 ≈ Letrec binds e2
+                                    ∧ v1 = v2) binds binds2
+    ∧ EVERY (λe. freevars e ⊆ set (MAP FST binds)) (MAP SND binds)
+    ∧ EVERY (λe. freevars e ⊆ set (MAP FST binds)) (MAP SND binds2)
+    ∧ freevars e ⊆ set (MAP FST binds)
+    ⇒ (Letrec binds e ≃ Letrec binds2 e) T
+Proof
+  rw [] >>
+  irule eval_to_sim_thm >> simp [eval_to_sim_def] >> gvs [] >>
+
+  irule exp_eq_trans >> irule_at Any beta_equality_Letrec >>
+  irule_at Any $ iffLR exp_eq_sym >>
+  irule_at Any exp_eq_trans >> irule_at Any beta_equality_Letrec >>
+  gvs [] >>
+  qspecl_then [‘λargs e1 e2. e1 ≈ e2’] assume_tac Sub_subst_funs >>
+  gvs [] >> pop_assum irule >>
+
+  qspecl_then [‘λargs e1 e2. Letrec binds e1 ≈ Letrec binds e2’] assume_tac Sub_subst_funs >>
+  gvs [Sub_def, term_rel_def, Com5_def]
+  cheat
+QED
+
+
+Theorem exp_eq_in_ctxt_Letrec2:
+  ∀c binds binds2 e.
+    ALL_DISTINCT (MAP FST binds)
+    ∧ MAP FST binds = MAP FST binds2
+    ∧ LIST_REL (λ(v1, e1) (v2, e2). exp_eq_in_ctxt (FOLDL (flip IsFree) c (MAP FST binds)) e1 e2
+                                    ∧ v1 = v2) binds binds2
+    ⇒ exp_eq_in_ctxt c (Letrec binds e) (Letrec binds2 e)
+Proof
+  Induct >> gvs [exp_eq_in_ctxt_def] >> rw []
+  >- (irule exp_eq_Letrec_cong >> gvs [exp_eq_refl, LIST_REL_EL_EQN] >>
+      rw [EL_MAP] >> first_x_assum $ drule_then assume_tac >>
+      rename1 ‘SND (EL n binds) ≈ SND (EL n binds2)’ >>
+      qabbrev_tac ‘p1 = EL n binds’ >> PairCases_on ‘p1’ >>
+      qabbrev_tac ‘p2 = EL n binds2’ >> PairCases_on ‘p2’ >>
+      gvs [concat_FOLDL_unfold_FOLDR, exp_eq_in_ctxt_def] >>
+      drule_then irule unfold_FOLDR_IsFree) >>
+
+
+  cheat
+QED*)
+
 Definition dest_fd_SND_def:
   dest_fd_SND NONE = {} ∧
   dest_fd_SND (SOME (bL, s)) = s
