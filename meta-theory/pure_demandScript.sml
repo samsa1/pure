@@ -1347,13 +1347,13 @@ Proof
 QED
 
 Theorem MAP_FST_no_change:
-  ∀l f. MAP FST l = MAP FST (MAP (λ(v, e). (v, f e)) l)
+  ∀l f. MAP FST l = MAP FST (MAP (λ(v, e). (v, f v e)) l)
 Proof
   Induct >> gvs [FORALL_PROD]
 QED
 
 Theorem ALL_DISTINCT_FST_MAP:
-  ∀l f. ALL_DISTINCT (MAP FST l) ⇒ ALL_DISTINCT (MAP FST (MAP (λ(v,e). (v, f e)) l))
+  ∀l f. ALL_DISTINCT (MAP FST l) ⇒ ALL_DISTINCT (MAP FST (MAP (λ(v,e). (v, f v e)) l))
 Proof
   gvs [GSYM MAP_FST_no_change]
 QED
@@ -2251,7 +2251,7 @@ Proof
   qabbrev_tac ‘bind_fun = λp2.
                             Letrec (MAP  (λ(f',e). (f', subst (DRESTRICT f (COMPL (set (MAP FST lcs)))) e)) lcs)
                                    (subst (DRESTRICT f (COMPL (set (MAP FST lcs)))) p2)’ >>
-  qspecl_then [‘lcs’, ‘bind_fun’] assume_tac ALL_DISTINCT_FST_MAP >> gvs [] >>
+  qspecl_then [‘lcs’, ‘K bind_fun’] assume_tac ALL_DISTINCT_FST_MAP >> gvs [] >>
   drule_then assume_tac fmap_FOLDL_FOLDR >>
   pop_assum $ qspecl_then [‘FEMPTY’] assume_tac >>
   drule_then assume_tac $ iffRL FLOOKUP_FOLDR_UPDATE >>
@@ -3108,8 +3108,38 @@ Proof
   once_rewrite_tac[exp_eq_sym] >> simp[]
 QED
 
-(*
 Inductive demands_rel:
+[~Eq:]
+  (∀e. demands_rel e e) ∧
+[~Fail:]
+  (∀e. (eval_wh e = wh_Error)
+         ⇒ demands_rel e Fail) ∧
+[~demands:]
+  (∀e e2 ps. e needs ((ps, e2), Nil)
+               ⇒ demands_rel e (Seq (Projs ps e2) e)) ∧
+[~App:]
+  (∀f1 f2 e1 e2. demands_rel f1 f2
+                   ∧ demands_rel e1 e2
+                   ⇒ demands_rel (App f1 e1) (App f2 e2)) ∧
+[~Lam:]
+  (∀e1 e2 s. (∀e3. closed e3 ⇒ demands_rel (subst1 s e3 e1) (subst1 s e3 e2)) ∧ demands_rel e1 e2
+                   ⇒ demands_rel (Lam s e1) (Lam s e2)) ∧
+[~Prim:]
+  (∀eL1 eL2 op. LIST_REL demands_rel eL1 eL2
+                  ⇒ demands_rel (Prim op eL1) (Prim op eL2)) ∧
+[~Letrec:]
+  (∀binds1 binds2 e1 e2.
+     LIST_REL (λ(v1, e1) (v2, e2). demands_rel (Letrec binds1 e1)
+                                               (Letrec binds1 e2)
+                                   ∧ v1 = v2) binds1 binds2
+     ∧ demands_rel (Letrec binds1 e1) (Letrec binds1 e2)
+     ⇒ demands_rel (Letrec binds1 e1) (Letrec binds2 e2)) ∧
+[~subst:]
+  (∀v e1 e2 e3. demands_rel (subst1 v e3 e1) (subst1 v e3 e2)
+                ⇒ demands_rel (Let v e3 e1) (Let v e3 e2))
+End
+
+(*Inductive demands_rel:
 [~Eq:]
   (∀c e. demands_rel (unfold_ctxt c e) (unfold_ctxt c e)) ∧
 [~Fail:]
@@ -3132,14 +3162,14 @@ Inductive demands_rel:
                                    ∧ v1 = v2) binds1 binds2
      ∧ demands_rel (unfold_ctxt c (Letrec binds1 e1)) (unfold_ctxt c (Letrec binds1 e2))
      ⇒ demands_rel (unfold_ctxt c (Letrec binds1 e1)) (unfold_ctxt c (Letrec binds2 e2)))
-End
+End*)
 
 Definition remove_err_def:
   remove_err wh_Error = wh_Diverge ∧
   remove_err wh = wh
 End
 
-Theorem demands_rel_eval_eq:
+(*Theorem demands_rel_eval_eq:
   ∀e1 e2. demands_rel e1 e2 ∧ closed e1 ∧ closed e2
           ⇒ ∀k. ∃k2. remove_err $ eval_wh_to k e1
                      = remove_err $ eval_wh_to (k + k2) e2
@@ -3154,21 +3184,120 @@ Proof
       gvs [remove_err_def])
   >- (gvs [eval_wh_to_def] >> cheat)
   >> cheat
-QED
+QED*)
 
-Theorem demands_rel_IMP_exp_eq:
-  ∀c e1 e2. demands_rel c e1 e2 ⇒ exp_eq_in_ctxt c e1 e2
+Definition Lets_def:
+  Lets [] e = e ∧
+  Lets ((v, e1)::tl) e2 = Let v e1 (Lets tl e2)
+End
+
+Theorem subst1_subst:
+  ∀l e2 e1 v. closed e1 ∧ EVERY closed (MAP SND l) ∧ ALL_DISTINCT (MAP FST l)
+              ⇒ subst1 v e1 (subst (FEMPTY |++ l)  e2) = subst (FEMPTY |+ (v, e1) |++ l) e2
 Proof
-  Induct_on ‘demands_rel’ >> rw [exp_eq_in_ctxt_refl, demands_def]
-  >- (irule exp_eq_IMP_exp_eq_in_ctxt >>
-      irule eval_IMP_exp_eq >> gvs [subst_def, eval_thm])
-  >- gvs [exp_eq_in_ctxt_Lam]
-  >- gvs [exp_eq_in_ctxt_App]
-  >- (irule exp_eq_in_ctxt_Prim >>
-      gvs [LIST_REL_EL_EQN])
-  >-
+  Induct using SNOC_INDUCT >>
+  gvs [FUPDATE_LIST, fmap_FOLDL_FOLDR, FOLDL_SNOC, FORALL_PROD, EVERY_SNOC, MAP_SNOC, ALL_DISTINCT_SNOC] >>
+  rpt $ strip_tac >>
+  irule EQ_TRANS >>
+  rename1 ‘subst1 v e1 (subst (FOLDL $|+ FEMPTY l |+ (p1, p2)) e2)’ >>
+  qexists_tac ‘subst1 v e1 (subst (FOLDL $|+ FEMPTY l) (subst1 p1 p2 e2))’ >>
+  conj_tac
+  >- (AP_TERM_TAC >> dxrule_then irule subst_subst1_UPDATE) >>
+  gvs [] >>
+  dxrule_then irule $ GSYM subst_subst1_UPDATE
 QED
 
+Theorem Lets_subst:
+  ∀l e b. EVERY closed (MAP SND l) ∧ ALL_DISTINCT (MAP FST l)
+        ⇒ (Lets l e ≅? subst (FEMPTY |++ l) e) b
+Proof
+  Induct >> gvs [Lets_def, FORALL_PROD]
+  >- gvs [FUPDATE_LIST, exp_eq_refl] >>
+  rw [] >>
+  irule exp_eq_trans >>
+  irule_at Any exp_eq_App_cong >> irule_at Any exp_eq_Lam_cong >>
+  last_x_assum $ drule_then $ irule_at Any >>
+  irule_at Any exp_eq_refl >> gvs [] >>
+  irule exp_eq_trans >> irule_at Any beta_equality >> gvs [subst1_subst, FUPDATE_LIST, exp_eq_refl]
+QED
+
+Theorem unfold_def:
+  ∀binds e b. closed (Letrec binds e) ∧ closed (Lets (MAP (λ(v, e). (v, Letrec binds e)) binds) e)
+              ∧ ALL_DISTINCT (MAP FST binds)
+              ⇒ (Letrec binds e ≅? Lets (MAP (λ(v, e). (v, Letrec binds e)) binds) e) b
+Proof
+  rw [] >>
+  irule exp_eq_trans >> irule_at Any beta_equality_Letrec >> gvs [Once exp_eq_sym] >>
+  irule exp_eq_trans >> irule_at Any Lets_subst >>
+  gvs [subst_funs_def, ALL_DISTINCT_FST_MAP, EVERY_EL] >>
+  rw [EL_MAP]
+  >~[‘EL n binds’]
+  >- (qabbrev_tac ‘p = EL n binds’ >> PairCases_on ‘p’ >>
+      gvs [closed_def, SUBSET_DIFF_EMPTY, BIGUNION_SUBSET, MEM_EL] >>
+      last_assum $ drule_then assume_tac >> rw [EL_MAP] >>
+      last_x_assum $ drule_then assume_tac >>
+      gvs [EL_MAP] >> rename1 ‘_ pair ⊆ _’ >> PairCases_on ‘pair’ >> gvs []) >>
+  rw [bind_def, exp_eq_refl] >>
+  qspecl_then [‘binds’, ‘K (Letrec binds)’] assume_tac ALL_DISTINCT_FST_MAP >>
+  gvs [FUPDATE_LIST, GSYM fmap_FOLDL_FOLDR] >>
+  dxrule_then assume_tac FLOOKUP_FOLDR_UPDATE >>
+  rename1 ‘FLOOKUP _ key = SOME value’ >> pop_assum $ qspecl_then [‘value’, ‘key’, ‘FEMPTY’] assume_tac >>
+  qsuff_tac ‘closed value’ >> gvs [] >>
+  first_x_assum irule >>
+  gvs [DISJOINT_EMPTY, FDOM_FEMPTY, MEM_EL, EL_MAP] >>
+  last_assum $ drule_then assume_tac >>
+  rename1 ‘EL n binds’ >> qabbrev_tac ‘p = EL n binds’ >> PairCases_on ‘p’ >>
+  gvs [EVERY_EL, EL_MAP]
+QED
+
+(*Theorem demands_rel_IMP_exp_eq:
+  ∀e1 e2. demands_rel e1 e2 ∧ closed e1 ∧ closed e2 ⇒ (e1 ≃ e2) T
+Proof
+  rw [] >>
+  irule eval_to_sim_thm >> simp [eval_to_sim_def] >>
+  first_assum $ irule_at Any >>
+  rpt (pop_assum kall_tac) >>
+  simp[Once SWAP_FORALL_THM] >>
+  Induct_on ‘demands_rel’ >> rw []
+  >- (qexists_tac ‘0’ >>
+      rename1 ‘eval_wh_to k e1’ >> Cases_on ‘eval_wh_to k e1’ >> gvs [demands_rel_Eq, LIST_REL_EL_EQN])
+  >- (gvs [eval_wh_eq] >>
+      rename1 ‘eval_wh_to k2 e1 = wh_Error’ >>
+      ‘eval_wh_to k2 e1 ≠ wh_Diverge’ by gvs [] >> dxrule_then assume_tac eval_wh_to_agree >>
+      rename1 ‘case eval_wh_to k e1 of | _ => _ ’ >> Cases_on ‘eval_wh_to k e1 = wh_Diverge’ >>
+      gvs [] >> cheat)
+  >- cheat
+  >- (gvs [eval_wh_to_def] >>
+      rename1 ‘eval_wh_to k e1 = wh_Diverge’ >> Cases_on ‘eval_wh_to k e1’ >>
+      last_x_assum $ qspecl_then [‘k’] assume_tac >> gvs []
+      >- (rename1 ‘eval_wh_to (k2 + k)’ >> qexists_tac ‘k2’ >> gvs []) >>
+      cheat)
+  >- gvs [eval_wh_to_def]
+  >- (rename1 ‘Prim op _’ >> Cases_on ‘op’ >> gvs [Once eval_wh_to_def, LIST_REL_EL_EQN] >> rw []
+      >>~[‘LENGTH _ ≠ _’]
+      >- (qexists_tac ‘0’ >> gvs [eval_wh_to_def])
+      >- (qexists_tac ‘0’ >> gvs [eval_wh_to_def])
+      >- (qexists_tac ‘0’ >> gvs [eval_wh_to_def])
+      >- (qexists_tac ‘0’ >> gvs [eval_wh_to_def])
+      >- (rename1 ‘LENGTH eL1 = LENGTH eL2’ >> Cases_on ‘eL1’ >> Cases_on ‘eL2’ >>
+          gvs [] >>
+          qexists_tac ‘0’ >> gvs [eval_wh_to_def])
+      >- (rename1 ‘LENGTH eL1 = LENGTH eL2’ >> Cases_on ‘eL1’ >> Cases_on ‘eL2’ >>
+          gvs [] >>
+          last_assum $ qspecl_then [‘0’] assume_tac >> fs [] >>
+          pop_assum $ drule_then $ drule_then assume_tac >>
+          rename1 ‘eval_wh_to (k - 1) h’ >> pop_assum $ qspecl_then [‘k - 1’] assume_tac >>
+          gvs [] >> rename1 ‘eval_wh_to (k2 + k - 1)’ >> qexists_tac ‘k2’ >>
+          FULL_CASE_TAC >> gvs [eval_wh_to_def] >>
+          IF_CASES_TAC >> gvs []
+          >- (last_x_assum $ qspecl_then [‘1’] assume_tac >> gvs [] >>
+              cheat) >> cheat)
+      >> cheat)
+  >- gvs [LIST_REL_CONJ]
+  >> cheat
+QED*)
+
+(*
 Theorem exp_eq_in_ctxt_Letrec2:
   ∀c binds binds2 e.
     ALL_DISTINCT (MAP FST binds)
@@ -3227,6 +3356,10 @@ Definition demands_boolList_def:
   demands_boolList d (hd::tl) =
     let (bL, d2) = demands_boolList d tl in
       (((∃ps. (ps, hd) ∈ d)∧ hd ∉ d2)::bL, d2 ∪ {hd})
+End
+
+Definition merged_fd_def:
+  merged_fd f1 f2 = {f1} ∪ {f2}
 End
 
 Inductive find: (* i i i o o o *)
@@ -3376,7 +3509,13 @@ Inductive find: (* i i i o o o *)
                  ∧ ((ps, v) ∈ ds
                     ∨ (∃ps' i. i < LENGTH b ∧ (ps', FST (EL i b)) ∈ ds ∧ (ps, v) ∈ EL i dsL)))
      ∧ ALL_DISTINCT (MAP FST b)
-     ⇒ find (Letrec b e) c fdc ds' (Letrec b' e') fd)
+     ⇒ find (Letrec b e) c fdc ds' (Letrec b' e') fd) ∧
+[find_double:]
+  (∀e e1 e2 c fds ds1 ds2 fd fd1 fd2.
+     find c e fds ds1 e1 fd1
+     ∧ find c e fds ds2 e2 fd2
+     ∧ fd ∈ merged_fd fd1 fd2
+     ⇒ find c e fds (ds1 ∪ ds2) e2 fd)
 End
 
 fun apply_to_first_n 0 tac = ALL_TAC
@@ -3754,6 +3893,15 @@ Proof
           \\ irule exp_eq_IMP_exp_eq_in_ctxt \\ irule exp_eq_Letrec_cong
           \\ gvs [exp_eq_refl, LIST_REL_EL_EQN] \\ irule_at Any LIST_EQ \\ fs []
           \\ rw [] \\ last_x_assum $ drule_then assume_tac \\ gvs [EL_MAP]))
+  >- (rw [] >> gvs [merged_fd_def]
+      >- (irule fdemands_exp_eq >> last_x_assum $ irule_at Any >> gvs [] >>
+          irule exp_eq_concat_still_eq >>
+          irule exp_eq_in_ctxt_trans >> first_x_assum $ irule_at Any >>
+          gvs [exp_eq_in_ctxt_sym]) >>
+      irule demands_when_applied_exp_eq >>
+      last_x_assum $ dxrule_then $ irule_at Any >>
+      irule exp_eq_in_ctxt_trans >> first_x_assum $ irule_at Any >>
+      gvs [exp_eq_in_ctxt_sym])
 QED
 
 Theorem find_soundness:
