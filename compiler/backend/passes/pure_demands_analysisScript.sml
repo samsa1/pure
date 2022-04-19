@@ -77,6 +77,39 @@ Definition handle_Letrec_fdemands_def:
   handle_Letrec_fdemands m (h::vL) (SOME fd::fdL) = handle_Letrec_fdemands (insert m (implode h) (FST fd)) vL fdL
 End
 
+Definition dest_Cons_def:
+  dest_Cons (Prim a0 (Cons s) l) = SOME (s, l) ∧
+  dest_Cons _ = NONE
+End
+
+Definition find_in_cases_def:
+  find_in_cases s len [] = NONE ∧
+  find_in_cases s len ((s2, vL, e)::tl) =
+    if s2 = s
+    then SOME (vL, e)
+    else find_in_cases s len tl
+End
+
+Theorem find_in_cases_MEM:
+  ∀l vL e s len. find_in_cases s len l = SOME (vL, e) ⇒ MEM (s, vL, e) l
+Proof
+  Induct >> gvs [find_in_cases_def] >>
+  PairCases >> gvs [find_in_cases_def] >>
+  rw [] >>
+  last_x_assum $ dxrule_then irule
+QED
+
+Theorem cexp_size_cases:
+  ∀cases f p1 p2 p3. MEM (p1, (p2, p3)) cases ⇒
+                     cexp_size f p3 + (list_size (list_size char_size) p2) ≤ cexp1_size f cases
+Proof
+  Induct >> rw [cexp_size_def] >>
+  gvs [cexp_size_def] >>
+  rename1 ‘cexp_size f’ >>
+  last_x_assum $ dxrule_then $ qspecl_then [‘f’] assume_tac >>
+  gvs []
+QED
+
 Definition demands_analysis_fun_def:
   (demands_analysis_fun c ((Var a0 a1): 'a cexp) fds =
      let fd = case mlmap$lookup fds (implode a1) of
@@ -155,19 +188,35 @@ Definition demands_analysis_fun_def:
    then
      (empty compare, Case a0 e n cases, NONE)
    else
-     let (m, e', fd) = demands_analysis_fun c e fds in
-       let cases' = MAP (λ(name,args,ce).
-                           (name, args,
-                            adds_demands a0
-                                         (demands_analysis_fun
-                                          (Unfold name n args (Bind n e c))
-                                          ce
-                                          (empty compare)) args)) cases in
-             (m, Case a0 e' n cases', NONE))
+     case dest_Cons e of
+       | SOME (s, args) =>
+           (case find_in_cases s (LENGTH args) cases of
+              | NONE => (empty compare, Prim a0 Seq [], NONE)
+              | SOME (vL, e) =>
+                  if LENGTH vL = LENGTH args
+                  then demands_analysis_fun c (App a0 (Lam a0 vL e) args) fds
+                  else (empty compare, Prim a0 Seq [], NONE))
+       | NONE =>
+           (let (m, e', fd) = demands_analysis_fun c e fds in
+             let cases' = MAP (λ(name,args,ce).
+                                 (name, args,
+                                  adds_demands a0
+                                               (demands_analysis_fun
+                                                (Unfold name n args (Bind n e c))
+                                                ce
+                                                (empty compare)) args)) cases in
+               (m, Case a0 e' n cases', NONE)))
 Termination
-  WF_REL_TAC ‘measure $ (cexp_size (K 0)) o (FST o SND)’ \\ rw []
-  \\ imp_res_tac cexp_size_lemma
-  \\ fs []
+  WF_REL_TAC ‘measure $ (cexp_size (K 0)) o (FST o SND)’ >> rw [] >>
+  imp_res_tac cexp_size_lemma >>
+  fs []
+  >~[‘dest_Cons e’]
+  >- (Cases_on ‘e’ >> gvs [dest_Cons_def] >>
+      rename1 ‘dest_Cons (Prim a op l)’ >> Cases_on ‘op’ >> gvs [dest_Cons_def, cexp_size_def] >>
+      dxrule_then assume_tac find_in_cases_MEM >>
+      dxrule_then assume_tac cexp_size_cases >>
+      pop_assum $ qspecl_then [‘K 0’] assume_tac >>
+      gvs [cop_size_def])
 End
 
 Definition demands_analysis_def:

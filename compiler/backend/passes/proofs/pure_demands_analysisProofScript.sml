@@ -567,6 +567,304 @@ Proof
   first_x_assum $ irule_at Any >> gvs [explode_implode]
 QED
 
+Theorem subst1_lets_for:
+  ∀namesl k n s e b.
+    ¬ MEM n namesl ⇒
+    (lets_for s n (MAPi (λi v. (i + k, v)) namesl) e
+       ≅? Apps (Lams namesl e) (MAPi (λi v. Proj s (i + k) (Var n)) namesl)) b
+Proof
+  Induct >> gvs [Apps_def, Lams_def, lets_for_def, exp_eq_refl, combinTheory.o_DEF] >>
+  rw [] >> rename1 ‘k + SUC _’ >> last_x_assum $ qspecl_then [‘SUC k’] assume_tac >>
+  gvs [GSYM SUC_ADD] >>
+  irule exp_eq_trans >> irule_at Any exp_eq_App_cong >> irule_at Any exp_eq_Lam_cong >>
+  once_rewrite_tac [ADD_SYM] >> last_x_assum $ irule_at Any >>
+  irule_at Any exp_eq_refl >> fs [] >>
+  irule exp_eq_trans >> irule_at Any Let_Apps >>
+  irule exp_eq_Apps_cong >>
+  rw [exp_eq_refl, LIST_REL_EL_EQN] >>
+  gvs [freevars_Projs, Let_not_in_freevars]
+QED
+
+Theorem subst1_Apps:
+  ∀eL s e e2. subst1 s e (Apps e2 eL) = Apps (subst1 s e e2) (MAP (subst1 s e) eL)
+Proof
+  Induct >> gvs [Apps_def, subst1_def]
+QED
+
+Theorem subst1_Lams:
+  ∀vL s e e2. ¬MEM s vL ⇒ subst1 s e (Lams vL e2) = Lams vL (subst1 s e e2)
+Proof
+  Induct >> gvs [Lams_def, subst1_def]
+QED
+
+Theorem MAP_subst1:
+  ∀l h e. EVERY closed l ⇒ MAP (λe2. subst1 h e e2) l = l
+Proof
+  Induct >> gvs [subst1_ignore, closed_def]
+QED
+
+Theorem subst_Let_Proj:
+  ∀n i argl1 argl2 s h e e2 b.
+     h ≠ n ∧ closed (Cons s (argl1 ++ e :: argl2))
+     ⇒ (Let n (Cons s (argl1 ++ e :: argl2)) (Let h (Proj s (LENGTH argl1) (Var n)) e2)
+        ≅? Let h e (Let n (Cons s (argl1 ++ (Var h) :: argl2)) e2)) b
+Proof
+  rw [] >>
+  irule exp_eq_trans >> irule_at Any beta_equality >>
+  gvs [subst1_def] >>
+  irule exp_eq_trans >> irule_at Any exp_eq_App_cong >>
+  irule_at (Pos hd) exp_eq_refl >>
+  rename1 ‘_ ++ e :: _ ’ >> qexists_tac ‘e’ >>
+  conj_tac
+  >~[‘Proj _ _ (Cons _ _)’]
+  >- (irule eval_wh_IMP_exp_eq >>
+      rw [subst_def, eval_wh_thm, EL_APPEND_EQN]) >>
+  irule exp_eq_trans >> irule_at Any beta_equality >> fs [] >>
+  irule $ iffLR exp_eq_sym >>
+  irule exp_eq_trans >> irule_at Any beta_equality >>
+  gvs [subst1_def] >>
+  irule exp_eq_trans >> irule_at Any beta_equality >>
+  conj_asm1_tac
+  >- gvs [EVERY_EL, EL_MAP] >>
+  dxrule_then (drule_then assume_tac) subst1_subst1 >>
+  gvs [MAP_subst1, exp_eq_refl]
+QED
+
+Definition Lets_def:
+  Lets [] e = e ∧
+  Lets ((v, e)::tl) e2 = Let v e (Lets tl e2)
+End
+
+Theorem Lets_APPEND:
+  ∀l1 l2 e. Lets (l1 ++ l2) e = Lets l1 (Lets l2 e)
+Proof
+  Induct >> gvs [Lets_def, FORALL_PROD]
+QED
+
+Theorem Lets_SNOC:
+  ∀l h1 h2 e. Lets (SNOC (h1, h2) l) e = Lets l (Let h1 h2 e)
+Proof
+  Induct >> gvs [Lets_def, FORALL_PROD]
+QED
+
+Theorem APPEND_CONS:
+  ∀l1 l2 e. l1 ++ [e] ++ l2 = l1 ++ e::l2
+Proof
+  Induct >> gvs []
+QED
+
+Theorem Lets_Let:
+  ∀l n e1 e2 b. EVERY (λ(v, e). closed e ∧ n ≠ v) l
+                ⇒ (Lets l (Let n e1 e2) ≅? Let n (Lets l e1) (Lets l e2)) b
+Proof
+  Induct >> gvs [Lets_def, exp_eq_refl, FORALL_PROD] >>
+  rw [] >> irule exp_eq_trans >>
+  irule_at (Pos hd) exp_eq_App_cong >> irule_at Any exp_eq_Lam_cong >>
+  last_x_assum $ irule_at Any >> irule_at Any exp_eq_refl >>
+  gvs [] >>
+  irule exp_eq_trans >> irule_at Any beta_equality >> fs [subst1_def] >>
+  irule exp_eq_App_cong >> irule_at Any exp_eq_Lam_cong >>
+  gvs [exp_eq_sym, beta_equality]
+QED
+
+Theorem Lets_Cons:
+  ∀l1 l2 s b. (Lets l1 (Cons s l2) ≅? Cons s (MAP (λe. Lets l1 e) l2)) b
+Proof
+  Induct >> gvs [Lets_def, FORALL_PROD, exp_eq_refl] >> rw [] >>
+  irule exp_eq_trans >>
+  irule_at Any exp_eq_App_cong >> irule_at Any exp_eq_Lam_cong >>
+  last_x_assum $ irule_at Any >> irule_at Any exp_eq_refl >> fs [] >>
+  irule exp_eq_trans >> irule_at Any Let_Prim >>
+  gvs [MAP_MAP_o, combinTheory.o_DEF, exp_eq_refl]
+QED
+
+Theorem Lets_Apps:
+  ∀l e eL b. (Lets l (Apps e eL) ≅? Apps (Lets l e) (MAP (λe. Lets l e) eL)) b
+Proof
+  Induct >> gvs [Lets_def, FORALL_PROD, exp_eq_refl] >> rw [] >>
+  irule exp_eq_trans >> irule_at Any exp_eq_App_cong >>
+  irule_at Any exp_eq_Lam_cong >>
+  last_x_assum $ irule_at Any >> irule_at Any exp_eq_refl >>
+  irule exp_eq_trans >> irule_at Any Let_Apps >>
+  gvs [MAP_MAP_o, combinTheory.o_DEF, exp_eq_refl]
+QED
+
+Theorem Lets_not_in_freevars:
+  ∀l e b. EVERY (λv. v ∉ freevars e) (MAP FST l)
+          ⇒ (Lets l e ≅? e) b
+Proof
+  Induct >> gvs [FORALL_PROD, exp_eq_refl, Lets_def] >>
+  rw [] >> irule exp_eq_trans >>
+  irule_at Any exp_eq_App_cong >> irule_at Any exp_eq_Lam_cong >>
+  last_x_assum $ irule_at Any >> irule_at Any exp_eq_refl >>
+  gvs [Let_not_in_freevars]
+QED
+
+Theorem exp_eq_Lets_cong:
+  ∀l e e2 b. (e ≅? e2) b ⇒ (Lets l e ≅? Lets l e2) b
+Proof
+  Induct >> gvs [Lets_def, FORALL_PROD, exp_eq_refl] >>
+  rw [] >> irule exp_eq_trans >>
+  irule_at Any exp_eq_App_cong >> irule_at Any exp_eq_Lam_cong >>
+  last_x_assum $ dxrule_then $ irule_at Any >>
+  irule_at Any exp_eq_refl >> gvs [exp_eq_refl]
+QED
+
+Theorem Lets_subst:
+  ∀l e b. EVERY closed (MAP SND l) ⇒ (Lets l e ≅? subst (FEMPTY |++ l) e) b
+Proof
+  Induct using SNOC_INDUCT >> gvs [Lets_def, FORALL_PROD, MAP_SNOC, EVERY_SNOC, Lets_SNOC]
+  >- gvs [FUPDATE_LIST, subst_FEMPTY, exp_eq_refl] >>
+  rw [] >>
+  irule exp_eq_trans >> irule_at Any exp_eq_Lets_cong >> irule_at Any beta_equality >>
+  gvs [] >>
+  irule exp_eq_trans >> last_x_assum $ irule_at Any >>
+  gvs [FUPDATE_LIST, FOLDL_SNOC, GSYM subst_subst1_UPDATE, exp_eq_refl]
+QED
+
+Theorem subst_Projs_lemma:
+  ∀argL namesL n1 a1 n s e b.
+    LENGTH argL = LENGTH namesL ∧ LENGTH n1 = LENGTH a1 ∧
+    EVERY closed a1 ∧ EVERY closed argL ∧ ¬MEM n n1 ∧ ¬MEM n namesL
+    ∧ ALL_DISTINCT (namesL ++ n1)
+    ⇒ (Lets (ZIP (n1, a1))
+         (Let n (Cons s ((MAP Var n1) ++ argL))
+          (Apps (Lams namesL e) (MAPi (λi v. Proj s (i + LENGTH a1) (Var n)) namesL)))
+         ≅? Lets (ZIP (n1 ++ namesL, a1 ++ argL))
+         (Let n (Cons s (MAP Var (n1 ++ namesL))) e)) b
+Proof
+  Induct >> gvs [Apps_def, Lams_def, exp_eq_refl] >>
+  gen_tac >> Cases >>
+  rw [GSYM ZIP_APPEND, Lets_APPEND, Lets_def, Lams_def, Apps_def] >>
+  rename1 ‘Lets (ZIP (n1, a1)) (Let v e1 (Lets (ZIP (namesL, _)) _))’ >>
+  last_x_assum $ qspecl_then [‘namesL’, ‘SNOC v n1’, ‘SNOC e1 a1’] assume_tac >>
+  gvs [ZIP_SNOC, Lets_APPEND, GSYM ZIP_APPEND, Lets_SNOC, MAP_SNOC, SNOC_APPEND] >>
+  gvs [APPEND_CONS, Lets_def] >>
+  irule exp_eq_trans >> pop_assum $ irule_at Any >>
+  gvs [ALL_DISTINCT_APPEND] >>
+  irule exp_eq_trans >> irule_at (Pos hd) Lets_subst >>
+  irule_at Any $ iffLR exp_eq_sym >>
+  irule_at Any exp_eq_trans >> irule_at (Pos hd) Lets_subst >>
+  gvs [MAP_ZIP, subst_def] >>
+  irule $ iffLR exp_eq_sym >>
+  irule exp_eq_trans >> irule_at Any subst_Let_Proj >>
+  gvs [EVERY_EL, EL_MAP] >> rw []
+  >- (irule IMP_closed_subst >> conj_tac
+      >- (rpt $ strip_tac >>
+          rename1 ‘(FEMPTY |++ ZIP (n1, a1)) \\ v’ >>
+          qspecl_then [‘v’, ‘FEMPTY |++ ZIP (n1, a1)’] assume_tac
+                      $ GEN_ALL FRANGE_DOMSUB_SUBSET >>
+          gvs [SUBSET_DEF] >> first_x_assum $ dxrule_then assume_tac >>
+          qspecl_then [‘ZIP (n1, a1)’, ‘FEMPTY’] assume_tac
+                      $ GEN_ALL FRANGE_FUPDATE_LIST_SUBSET >>
+          gvs [SUBSET_DEF] >> first_x_assum $ dxrule_then assume_tac >>
+          gvs [MEM_EL, MAP_ZIP]) >>
+      gvs [FDOM_FUPDATE_LIST, MAP_ZIP, EL_MEM, MEM_EL] >>
+      strip_tac >> gvs []) >>
+  irule exp_eq_App_cong >> irule_at Any exp_eq_Lam_cong >>
+  irule_at Any exp_eq_Prim_cong >>
+  rw [LIST_REL_EL_EQN]
+  >~[‘n2 < _’]
+  >- (Cases_on ‘n2 < LENGTH a1’ >> gvs [EL_APPEND_EQN, EL_MAP]
+      >- (qspecl_then [‘FEMPTY |++ ZIP (n1, a1)’, ‘Var (EL n2 n1)’, ‘v’]
+          assume_tac subst_fdomsub >>
+          gvs [MEM_EL] >>
+          rpt $ first_x_assum $ qspecl_then [‘n2’] assume_tac >>
+          gvs [exp_eq_refl]) >>
+      Cases_on ‘n2 - LENGTH a1 > 0’
+      >- gvs [EL_CONS, EL_MAP, exp_eq_refl] >>
+      Cases_on ‘n2 = LENGTH a1’ >> gvs [exp_eq_refl]) >>
+  gvs [subst_Apps, combinTheory.o_DEF, subst_def, Once exp_eq_sym] >>
+  irule exp_eq_trans >> irule_at Any Let_Apps >>
+  irule exp_eq_Apps_cong >>
+  gvs [exp_eq_refl, DOMSUB_COMMUTES, LIST_REL_EL_EQN] >>
+  rpt $ strip_tac >> gvs [GSYM SUC_ADD, ADD_SYM] >>
+  irule Let_not_in_freevars >> gvs []
+QED
+
+Theorem Lets_Apps_Lams:
+  ∀l e b. EVERY closed (MAP SND l)
+          ⇒ (Lets l e ≅? Apps (Lams (MAP FST l) e) (MAP SND l)) b
+Proof
+  Induct >> gvs [Apps_def, Lams_def, Lets_def, FORALL_PROD, exp_eq_refl] >>
+  rw [] >>
+  irule exp_eq_trans >> irule_at Any exp_eq_App_cong >>
+  irule_at Any exp_eq_Lam_cong >> last_x_assum $ irule_at Any >>
+  irule_at Any exp_eq_refl >> gvs [] >>
+  irule exp_eq_trans >> irule_at Any Let_Apps >>
+  irule exp_eq_Apps_cong >> gvs [exp_eq_refl, LIST_REL_EL_EQN, EVERY_EL] >>
+  rw [] >> gvs [EL_MAP, Let_not_in_freevars, closed_def]
+QED
+
+Theorem subst_Projs:
+  ∀argL namesL n s e b b.
+    LENGTH argL = LENGTH namesL ∧ ALL_DISTINCT namesL
+    ∧ ¬MEM n namesL
+    ⇒ (Let n (Cons s argL) (Apps (Lams namesL e)
+                            (MAPi (λi v. Proj s i (Var n)) namesL))
+          ≅? Apps (Lams namesL (Let n (Cons s (MAP Var namesL)) e)) argL) b
+Proof
+  rw[exp_eq_def, bind_def] >> rw[] >>
+  simp[MAP_MAP_o, combinTheory.o_DEF, subst_def] >>
+  gvs[GSYM SUBSET_INSERT_DELETE, BIGUNION_SUBSET, MEM_MAP, PULL_EXISTS] >>
+  simp[app_bisimilarity_eq] >>
+  conj_asm2_tac
+  >- (gvs [subst_Apps, combinTheory.o_DEF, subst_Lams, subst_ignore] >>
+      rename1 ‘Let _ (Cons s (MAP _ argL)) (Apps (Lams namesL (subst (FDIFF (f \\ n) _) _)) _)’ >>
+      qspecl_then [‘MAP (λa. subst f a) argL’, ‘namesL’, ‘[]’, ‘[]’]
+                  assume_tac subst_Projs_lemma >>
+      gvs [Lets_def] >>
+      irule exp_eq_trans >> pop_assum $ irule_at Any >> fs [] >>
+      irule exp_eq_trans >> irule_at Any Lets_Apps_Lams >>
+      gvs [MAP_ZIP, subst_def] >>
+      cheat
+     ) >>
+  cheat
+QED
+
+Theorem demands_analysis_Cases_soundness:
+  ∀cases a0 a1 a2 n s argl vL e b.
+    find_in_cases s (LENGTH argl) cases = SOME (vL, e) ∧ s ∉ monad_cns
+    ∧ ¬MEM n (FLAT (MAP (FST o SND) cases)) ∧ EVERY (closed o exp_of) argl
+    ∧ LENGTH argl = LENGTH vL
+    ⇒ (exp_of (Case a0 (Prim a1 (Cons s) argl) n cases) ≅? exp_of (App a0 (Lam a0 vL e) argl)) b
+Proof
+  Induct >> gvs [find_in_cases_def, FORALL_PROD, exp_of_def] >>
+  rw [rows_of_def, op_of_def] >>
+  irule exp_eq_trans >> irule_at Any beta_equality >>
+  gvs [subst1_def,  EVERY_MAP, EVERY_EL]
+  >- (irule exp_eq_trans >>
+      rename1 ‘subst1 n (Cons s (MAP _ argL)) (lets_for _ _ (MAPi _ namesL) (exp_of e))’ >>
+      qexists_tac ‘subst1 n (Cons s (MAP (λa. exp_of a) argL))
+                   (Apps (Lams namesL (exp_of e))
+                    (MAPi (λi v. Proj s (i + 0) (Var n)) namesL))’ >>
+      irule_at (Pos hd) exp_eq_trans >>
+      assume_tac $ iffLR $ GEN_ALL exp_eq_forall_subst >>
+      pop_assum $ irule_at Any >>
+      irule_at Any subst1_lets_for >>
+      gvs [subst1_def, EVERY_EL, EL_MAP, combinTheory.o_DEF] >>
+      conj_tac
+      >- (irule eval_wh_IMP_exp_eq >>
+          rw [subst_def, eval_wh_If, eval_wh_IsEq, eval_wh_Cons]) >>
+      irule exp_eq_trans >> irule_at (Pos hd) exp_eq_Apps_cong >>
+      irule_at (Pos $ el 2) exp_eq_refl >>
+      gvs [LIST_REL_EL_EQN] >>
+      qexists_tac ‘MAP exp_of argL’ >>
+      rw [EL_MAP]
+      >- (irule eval_wh_IMP_exp_eq >> rw [subst_def, eval_wh_thm, EL_MAP])
+
+      irule_at Any exp_eq_Apps_cong >>
+      irule_at (Pos hd) exp_eq_l_refl >>
+      rw [LIST_REL_EL_EQN, EL_MAP, subst1_Lams]
+      >- (irule exp_eq_Lams_cong >> cheat)
+  irule exp_eq_trans >> last_x_assum $ irule_at Any >>
+  rpt $ first_assum $ irule_at Any >> gvs [Once exp_eq_sym] >>
+  irule exp_eq_trans >> irule_at Any beta_equality >>
+  gvs [op_of_def, EVERY_EL, EL_MAP] >>
+  irule eval_wh_IMP_exp_eq >>
+  rw [subst_def, eval_wh_If, eval_wh_IsEq, eval_wh_Cons]
+QED
+
 Theorem demands_analysis_soundness_lemma:
   ∀(f: α -> num) (e: α cexp) c fds m e' fd.
     demands_analysis_fun c e fds = (m, e', fd) ∧ map_ok fds ∧ cmp_of fds = compare
